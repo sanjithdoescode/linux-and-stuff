@@ -1,0 +1,101 @@
+#!/bin/bash
+
+# omarchy:summary=Set and remember the power profile for AC or battery use
+# omarchy:args=[autodetect|ac|battery] [cool|power-saver|balanced|performance]
+
+action="${1:-autodetect}"
+requested_profile="${2:-}"
+
+usage() {
+  echo "Usage: omarchy-powerprofiles-set [autodetect|ac|battery] [cool|power-saver|balanced|performance]" >&2
+  exit 1
+}
+
+(( $# <= 2 )) || usage
+
+case "$action" in
+  autodetect)
+    if [[ $(busctl get-property org.freedesktop.UPower /org/freedesktop/UPower org.freedesktop.UPower OnBattery 2>/dev/null) == "b true" ]]; then
+      action=battery
+    else
+      action=ac
+    fi
+    ;;
+  ac | battery) ;;
+  *) usage ;;
+esac
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$DIR/list.sh" ]]; then
+  mapfile -t profiles < <("$DIR/list.sh")
+elif [[ -x "$HOME/.local/bin/omarchy-powerprofiles-list" ]]; then
+  mapfile -t profiles < <("$HOME/.local/bin/omarchy-powerprofiles-list")
+else
+  profiles=(cool power-saver balanced performance)
+fi
+
+profile_available() {
+  [[ " ${profiles[*]} " == *" $1 "* ]]
+}
+
+state_dir="${OMARCHY_POWERPROFILES_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/powerprofiles}"
+state_file="$state_dir/$action"
+
+if [[ -n $requested_profile ]]; then
+  profile_available "$requested_profile" || {
+    echo "Power profile is not available: $requested_profile" >&2
+    exit 1
+  }
+
+  profile="$requested_profile"
+elif [[ -r $state_file ]]; then
+  profile=$(<"$state_file")
+fi
+
+if [[ -z ${profile:-} ]] || ! profile_available "$profile"; then
+  if [[ $action == "ac" ]] && profile_available performance; then
+    profile=performance
+  else
+    profile=balanced
+  fi
+fi
+
+apply_profile() {
+  local p="$1"
+  case "$p" in
+    cool)
+      powerprofilesctl set power-saver || return 1
+      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
+        echo cool > /sys/firmware/acpi/platform_profile
+      fi
+      ;;
+    power-saver)
+      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
+        echo quiet > /sys/firmware/acpi/platform_profile
+      fi
+      powerprofilesctl set power-saver || return 1
+      ;;
+    balanced)
+      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
+        echo balanced > /sys/firmware/acpi/platform_profile
+      fi
+      powerprofilesctl set balanced || return 1
+      ;;
+    performance)
+      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
+        echo performance > /sys/firmware/acpi/platform_profile
+      fi
+      powerprofilesctl set performance || return 1
+      ;;
+    *)
+      powerprofilesctl set "$p" || return 1
+      ;;
+  esac
+}
+
+apply_profile "$profile" || exit 1
+
+if [[ -n $requested_profile ]]; then
+  mkdir -p "$state_dir"
+  printf '%s\n' "$requested_profile" >"$state_file"
+fi

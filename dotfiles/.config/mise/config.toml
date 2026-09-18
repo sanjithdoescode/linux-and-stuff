@@ -1,0 +1,12 @@
+[tools]
+bun = "latest"
+codex = "latest"
+gemini = { version = "latest", allow_builds = ["@github/keytar", "node-pty"] }
+gh = "latest"
+go = "latest"
+java = "latest"
+opencode = "latest"
+python = "latest"
+
+[settings.upgrade]
+auto_prune = false
