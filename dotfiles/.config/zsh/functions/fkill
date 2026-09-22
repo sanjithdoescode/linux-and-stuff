@@ -1,0 +1,26 @@
+# Interactive Process Killer (FZF + ps)
+# Usage: fkill
+fkill() {
+    if ! command -v fzf &>/dev/null; then
+        echo "fkill requires fzf" >&2
+        return 1
+    fi
+    local pid_output key pids
+    pid_output=$(ps -u "$USER" -o pid,user,%cpu,%mem,stat,time,command | sed 1d | fzf --multi \
+        --header="Enter: kill (SIGTERM) | Ctrl-X: force-kill (SIGKILL) | Tab: multi-select" \
+        --preview="echo {}" \
+        --preview-window="down:3:wrap" \
+        --expect=ctrl-x)
+    [ -z "$pid_output" ] && return
+
+    key=$(echo "$pid_output" | head -n1)
+    pids=$(echo "$pid_output" | tail -n +2 | awk '{print $1}')
+
+    if [ -n "$pids" ]; then
+        if [ "$key" = "ctrl-x" ]; then
+            echo "$pids" | xargs -r kill -9 2>/dev/null && echo "Force-killed PID(s): $(echo $pids | tr '\n' ' ')"
+        else
+            echo "$pids" | xargs -r kill -15 2>/dev/null && echo "Terminated PID(s): $(echo $pids | tr '\n' ' ')"
+        fi
+    fi
+}

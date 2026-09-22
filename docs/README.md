@@ -58,4 +58,5 @@ This directory documents all custom configurations, shell functions, keyboard sh
     `AUTO_CD`, typo auto-correction (`CORRECT`), `:q` terminal exit, and `agyyolo` alias.
 26. [**Antigravity Agent Customization System**](agents/agy.md)
     Tailor agent behavior, enforce guidelines, teach workflows, and configure MCP servers and plugins.
-
+27. [**Antigravity AI Assistant Neovim Sidebar**](antigravity-neovim-sidebar.md)
+    Right-side AI companion sidebar in Neovim powered by `antigravity-cli.nvim` by NakLast, with context persistence and code selection sending.

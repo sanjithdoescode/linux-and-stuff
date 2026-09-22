@@ -5,16 +5,16 @@
 [![Shell: Zsh](https://img.shields.io/badge/Shell-Zsh-black?logo=gnu-bash&logoColor=white)](https://zsh.sourceforge.io)
 [![Editor: Neovim](https://img.shields.io/badge/Editor-Neovim-57A143?logo=neovim&logoColor=white)](https://neovim.io)
 [![Terminal: Ghostty](https://img.shields.io/badge/Terminal-Ghostty-orange)](https://ghostty.org)
-[![Docs: 26 Guides](https://img.shields.io/badge/Documentation-26%20Guides-blueviolet)](docs/README.md)
+[![Docs: 27 Guides](https://img.shields.io/badge/Documentation-27%20Guides-blueviolet)](docs/README.md)
 
 Welcome to my personal public repository of **Omarchy Linux** dotfiles, desktop customizations, terminal tuning, and interactive productivity micro-TUIs.
 
 This repository serves two primary purposes:
 1. **Complete Dotfiles Management**: Houses production configuration files for Hyprland, Zsh, Ghostty, Kitty, Neovim, Tmux, Starship, custom Omarchy plugins, themes, and power profiles.
-2. **Comprehensive Documentation**: Contains 26 standalone deep-dive guides explaining every workflow enhancement, custom shell function, keyboard shortcut, and micro-TUI.
+2. **Comprehensive Documentation**: Contains 27 standalone deep-dive guides explaining every workflow enhancement, custom shell function, keyboard shortcut, and micro-TUI.
 
 > 📖 **Looking for the deep-dive feature guides?**  
-> Check out the [**Documentation Index (docs/README.md)**](docs/README.md) for 26 step-by-step guides with examples, keybindings, and architectural notes.
+> Check out the [**Documentation Index (docs/README.md)**](docs/README.md) for 27 step-by-step guides with examples, keybindings, and architectural notes.
 
 ---
 
@@ -63,7 +63,7 @@ This repository serves two primary purposes:
 │   │   ├── kitty/              # Kitty terminal config with theme integration
 │   │   ├── lazygit/            # Lazygit configuration
 │   │   ├── mise/               # Mise tool manager configuration
-│   │   ├── nvim/               # Complete Neovim configuration (LazyVim base)
+│   │   ├── nvim/               # Complete Neovim configuration (LazyVim + Antigravity AI sidebar)
 │   │   ├── omarchy/            # Custom Omarchy shell configs, hooks, & plugins
 │   │   │   ├── branding/       # Custom ASCII branding & screensavers
 │   │   │   ├── defaults/       # Default agent & app overrides
@@ -83,8 +83,8 @@ This repository serves two primary purposes:
 │   │   ├── user-dirs.dirs      # XDG user directory mappings
 │   │   └── xdg-terminals.list  # Terminal emulator priority list
 │   └── .local/
-│       └── bin/                # Custom utility scripts (power profile management)
-├── docs/                       # 26 standalone markdown documentation guides
+│       └── bin/                # Custom utility scripts & Antigravity CLI symlink
+├── docs/                       # 27 standalone markdown documentation guides
 │   ├── README.md               # Complete documentation catalog
 │   ├── agents/                 # Antigravity agent customization guide
 │   └── *.md                    # Individual deep dives for every workflow tool
@@ -131,6 +131,7 @@ This repository serves two primary purposes:
 
 - **[Neovim (`dotfiles/.config/nvim/`)](docs/neovim-alias.md)**:
   - LazyVim modular configuration with dynamic Omarchy theme hot-reloading (`lua/plugins/omarchy-theme-hotreload.lua`).
+  - **Antigravity AI Assistant Sidebar (`lua/plugins/antigravity.lua`)**: Right-side AI pair programming companion powered by [`antigravity-cli.nvim`](https://github.com/NakLast/antigravity-cli.nvim) by [NakLast](https://github.com/NakLast) with `<leader>ag` toggle, persistent CLI session context, and `<leader>as` code selection piping ([Guide](docs/antigravity-neovim-sidebar.md)).
   - Transparency override, remote clipboard synchronization, and animated scrolling tweaks.
 - **[Starship (`dotfiles/.config/starship.toml`)](dotfiles/.config/starship.toml)**:
   - Clean, cyan-themed git status, branch tracking, and two-level directory truncation.
@@ -170,6 +171,7 @@ All custom functions and aliases are built into [`.zshrc`](dotfiles/.zshrc) and 
 | `Super + ` ` ` | Global dropdown Quake terminal scratchpad in Ghostty | [Guide](docs/ghostty-enhancements.md) |
 | `Super + H` | Whisper push-to-talk voice dictation | [Guide](docs/hyprland-shortcuts.md) |
 | `Super + Shift + T`| Screen rectangle OCR text grabber | [Guide](docs/hyprland-shortcuts.md) |
+| `<leader>ag` / `<leader>as` | Antigravity AI Neovim right sidebar & code selection reference | [Guide](docs/antigravity-neovim-sidebar.md) |
 
 ---
 
@@ -292,6 +294,7 @@ All 26 detailed markdown guides are maintained inside the [`docs/`](docs/) direc
 24. [**Ghostty Performance Tuning & Custom Keybindings**](docs/ghostty-terminal-tuning.md)
 25. [**Shell Quality of Life Options & Productivity Aliases**](docs/shell-convenience-options.md)
 26. [**Antigravity Agent Customization System**](docs/agents/agy.md)
+27. [**Antigravity AI Assistant Neovim Sidebar**](docs/antigravity-neovim-sidebar.md)
 
 ---
 
