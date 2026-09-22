@@ -26,6 +26,7 @@
 -- Voice & Capture shortcuts
 o.bind("SUPER + H", "Voxtype Dictation", "voxtype record toggle")
 o.bind("SUPER + SHIFT + T", "OCR Screen Capture", "omarchy capture text")
+o.bind("SUPER + SHIFT + F10", "OmaSnap", "omarchy-shell shell summon tahayvr.omasnap '{\"capture\":\"region\"}'")
 
 -- Workspace navigation overrides
 hl.unbind("SUPER + LEFT")
