@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "sanjith.antigravity",
+  "name": "Google Antigravity",
+  "version": "1.0.0",
+  "author": "Sanjith",
+  "license": "MIT",
+  "description": "Google Antigravity usage, weekly and 5-hour limits for Gemini and Claude/GPT models.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Antigravity",
+    "description": "Real-time rate limits (weekly and 5-hour windows) for Gemini and Claude/GPT models with reset countdowns and session stats.",
+    "category": "AI",
+    "aliases": [
+      "antigravity",
+      "agy",
+      "gemini-usage"
+    ],
+    "defaultSection": "right",
+    "allowMultiple": false,
+    "defaults": {
+      "refreshIntervalSec": 60,
+      "showPercentage": true
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "description": "How often quota is polled in background",
+        "min": 15,
+        "max": 3600,
+        "step": 15,
+        "defaultValue": 60
+      },
+      {
+        "key": "showPercentage",
+        "type": "boolean",
+        "label": "Show lowest quota percentage on bar button",
+        "defaultValue": true
+      }
+    ]
+  }
+}

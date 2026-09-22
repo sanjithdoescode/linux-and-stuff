@@ -60,3 +60,5 @@ This directory documents all custom configurations, shell functions, keyboard sh
     Tailor agent behavior, enforce guidelines, teach workflows, and configure MCP servers and plugins.
 27. [**Antigravity AI Assistant Neovim Sidebar**](antigravity-neovim-sidebar.md)
     Right-side AI companion sidebar in Neovim powered by `antigravity-cli.nvim` by NakLast, with context persistence and code selection sending.
+28. [**Google Antigravity Usage Omarchy Plugin**](antigravity-usage-plugin.md)
+    Real-time bar widget and dashboard monitoring 5-hour and weekly rate limits for Gemini and Claude/GPT models with native Omarchy theme integration.
