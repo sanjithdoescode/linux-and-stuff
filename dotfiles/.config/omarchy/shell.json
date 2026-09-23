@@ -7,22 +7,31 @@
           "id": "omarchy.indicators"
         },
         {
+          "id": "omarchy.keyboard-layout"
+        },
+        {
           "format": "dddd HH:mm",
           "formatAlt": "d MMMM 'W'ww yyyy",
           "id": "omarchy.clock",
           "verticalFormat": "HH\n—\nmm"
         },
         {
-          "id": "omarchy.keyboard-layout"
+          "id": "omarchy.weather"
         },
         {
-          "id": "omarchy.weather"
+          "id": "ianswope.apple-music"
+        },
+        {
+          "id": "tahayvr.omasnap"
         },
         {
           "id": "omarchy.microphone"
         },
         {
           "id": "omarchy.system-update"
+        },
+        {
+          "id": "io.github.ayandexyz.glance"
         }
       ],
       "left": [
@@ -34,11 +43,17 @@
         },
         {
           "id": "omarchy.active-window"
+        },
+        {
+          "id": "omarchy.media"
         }
       ],
       "right": [
         {
           "id": "omarchy.tray"
+        },
+        {
+          "id": "sanjith.antigravity"
         },
         {
           "id": "io.github.twiking.omasettings"
@@ -48,9 +63,6 @@
         },
         {
           "id": "omarchy.tailscale"
-        },
-        {
-          "id": "sanjith.antigravity"
         },
         {
           "id": "omarchy.agents"
@@ -79,6 +91,13 @@
     "lock": 300,
     "screensaver": 150
   },
-  "plugins": [],
+  "plugins": [
+    {
+      "id": "io.github.pablo-merino.altswitch"
+    },
+    {
+      "id": "bobbynicholas.omaland"
+    }
+  ],
   "version": 1
 }

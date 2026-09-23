@@ -90,6 +90,21 @@ function modeLabel(device, onBattery, states) {
   return "Charging"
 }
 
+function clampThreshold(value, min, max, fallback) {
+  var v = parseInt(value)
+  if (isNaN(v)) return fallback !== undefined ? fallback : min
+  return Math.max(min, Math.min(max, v))
+}
+
+function normalizeThresholds(start, stop) {
+  var s = clampThreshold(start, 50, 95, 50)
+  var e = clampThreshold(stop, 55, 100, 55)
+  if (s > e - 5) {
+    s = Math.max(50, e - 5)
+  }
+  return { start: s, stop: e }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     clampIndex: clampIndex,
@@ -100,6 +115,8 @@ if (typeof module !== "undefined") {
     batteryFraction: batteryFraction,
     chargeThresholdActive: chargeThresholdActive,
     batteryIcon: batteryIcon,
-    modeLabel: modeLabel
+    modeLabel: modeLabel,
+    clampThreshold: clampThreshold,
+    normalizeThresholds: normalizeThresholds
   }
 }

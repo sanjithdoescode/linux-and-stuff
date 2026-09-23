@@ -120,6 +120,8 @@ if [[ $shell_output == "true" ]]; then
     else
       printf 'threshold\t%s%%\n' "$threshold_end"
     fi
+    printf 'threshold_start\t%s\n' "${threshold_start:-$(( threshold_end > 5 ? threshold_end - 5 : threshold_end ))}"
+    printf 'threshold_end\t%s\n' "$threshold_end"
   fi
 
   exit 0

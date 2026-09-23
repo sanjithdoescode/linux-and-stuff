@@ -19,6 +19,24 @@ Panel {
   property string activeProfile: ""
   property int profileIndex: 0
   property bool cursorActive: false
+  property int startThreshold: {
+    var val = parseInt(batteryInfo.threshold_start)
+    return isNaN(val) ? 50 : val
+  }
+  property int stopThreshold: {
+    var val = parseInt(batteryInfo.threshold_end)
+    return isNaN(val) ? 55 : val
+  }
+  property int liveStartThreshold: startThreshold
+  property int liveStopThreshold: stopThreshold
+  readonly property bool hasThresholdSupport: !!batteryInfo.threshold_end
+
+  onStartThresholdChanged: {
+    if (!startSlider.dragging) liveStartThreshold = startThreshold
+  }
+  onStopThresholdChanged: {
+    if (!stopSlider.dragging) liveStopThreshold = stopThreshold
+  }
   readonly property bool showPercentage: setting("showPercentage", false) === true
   // With the percentage shown the button paints a text block wider than an
   // icon, so the open-panel mark takes the painted width instead of the
@@ -169,6 +187,15 @@ Panel {
     actionProc.running = true
   }
 
+  function setThresholds(startVal, stopVal) {
+    if (thresholdProc.running) return
+    var norm = Model.normalizeThresholds(startVal, stopVal)
+    liveStartThreshold = norm.start
+    liveStopThreshold = norm.stop
+    thresholdProc.command = [root.pluginDir + "/threshold.sh", "set", String(norm.start), String(norm.stop)]
+    thresholdProc.running = true
+  }
+
   function togglePercentage() {
     root.settings = Object.assign({}, root.settings, { showPercentage: !root.showPercentage })
     if (root.bar && root.bar.shell) root.bar.shell.updateEntryInline(root.moduleName, root.settings)
@@ -177,12 +204,13 @@ Panel {
   IpcHandler {
     target: "omarchy.power"
 
-    function open() { root.open() }
-    function close() { root.close() }
-    function show() { root.open() }
-    function hide() { root.close() }
-    function toggle() { root.toggle() }
-    function togglePercentage() { root.togglePercentage() }
+    function open(): void { root.open() }
+    function close(): void { root.close() }
+    function show(): void { root.open() }
+    function hide(): void { root.close() }
+    function toggle(): void { root.toggle() }
+    function togglePercentage(): void { root.togglePercentage() }
+    function setThresholds(startVal: string, stopVal: string): void { root.setThresholds(startVal, stopVal) }
   }
 
   onOpenedChanged: {
@@ -225,6 +253,11 @@ Panel {
 
   Process {
     id: actionProc
+    onExited: root.refresh()
+  }
+
+  Process {
+    id: thresholdProc
     onExited: root.refresh()
   }
 
@@ -501,6 +534,242 @@ Panel {
                   }
                 }
               }
+            }
+          }
+        }
+
+        // ---------- Charge thresholds ----------
+        PanelSeparator {
+          visible: root.hasThresholdSupport
+          foreground: root.bar.foreground
+        }
+
+        Column {
+          visible: root.hasThresholdSupport
+          width: parent.width
+          spacing: Style.space(10)
+
+          Item {
+            width: parent.width
+            implicitHeight: thresholdHeader.implicitHeight
+
+            PanelSectionHeader {
+              id: thresholdHeader
+              text: "CHARGE THRESHOLDS"
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+              anchors.left: parent.left
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            Text {
+              id: thresholdRangeLabel
+              textFormat: Text.PlainText
+              text: root.liveStartThreshold + "% – " + root.liveStopThreshold + "%"
+              color: Qt.darker(root.bar.foreground, 1.4)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              anchors.right: parent.right
+              anchors.rightMargin: Style.space(6)
+              anchors.verticalCenter: parent.verticalCenter
+            }
+          }
+
+          // Start threshold slider
+          Column {
+            width: parent.width
+            spacing: Style.space(3)
+
+            Item {
+              width: parent.width
+              implicitHeight: startThresholdLabel.implicitHeight
+
+              Text {
+                id: startThresholdLabel
+                textFormat: Text.PlainText
+                text: "Start charging below"
+                color: root.bar.foreground
+                opacity: 0.7
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: root.liveStartThreshold + "%"
+                color: root.bar.foreground
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+
+            CursorSurface {
+              id: startSliderRow
+              width: parent.width
+              height: startSlider.implicitHeight + Style.spacing.controlGap
+              foreground: root.bar.foreground
+              outline: true
+
+              PanelSlider {
+                id: startSlider
+                bar: root.bar
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                minimum: 50
+                maximum: 95
+                step: 5
+                integer: true
+                value: root.startThreshold
+                onMoved: function(v) {
+                  root.liveStartThreshold = Math.round(v)
+                  if (root.liveStartThreshold > root.liveStopThreshold - 5) {
+                    root.liveStopThreshold = Math.min(100, root.liveStartThreshold + 5)
+                  }
+                }
+                onReleased: function(v) {
+                  var newStart = Math.round(v)
+                  var newStop = root.liveStopThreshold
+                  if (newStart > newStop - 5) {
+                    newStop = Math.min(100, newStart + 5)
+                    root.liveStopThreshold = newStop
+                  }
+                  root.liveStartThreshold = newStart
+                  root.setThresholds(newStart, newStop)
+                }
+              }
+            }
+          }
+
+          // Stop threshold slider
+          Column {
+            width: parent.width
+            spacing: Style.space(3)
+
+            Item {
+              width: parent.width
+              implicitHeight: stopThresholdLabel.implicitHeight
+
+              Text {
+                id: stopThresholdLabel
+                textFormat: Text.PlainText
+                text: "Stop charging at"
+                color: root.bar.foreground
+                opacity: 0.7
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.bodySmall
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                textFormat: Text.PlainText
+                text: root.liveStopThreshold + "%"
+                color: root.bar.foreground
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+
+            CursorSurface {
+              id: stopSliderRow
+              width: parent.width
+              height: stopSlider.implicitHeight + Style.spacing.controlGap
+              foreground: root.bar.foreground
+              outline: true
+
+              PanelSlider {
+                id: stopSlider
+                bar: root.bar
+                anchors.fill: parent
+                anchors.leftMargin: Style.space(6)
+                anchors.rightMargin: Style.space(6)
+                minimum: 55
+                maximum: 100
+                step: 5
+                integer: true
+                value: root.stopThreshold
+                onMoved: function(v) {
+                  root.liveStopThreshold = Math.round(v)
+                  if (root.liveStopThreshold < root.liveStartThreshold + 5) {
+                    root.liveStartThreshold = Math.max(50, root.liveStopThreshold - 5)
+                  }
+                }
+                onReleased: function(v) {
+                  var newStop = Math.round(v)
+                  var newStart = root.liveStartThreshold
+                  if (newStop < newStart + 5) {
+                    newStart = Math.max(50, newStop - 5)
+                    root.liveStartThreshold = newStart
+                  }
+                  root.liveStopThreshold = newStop
+                  root.setThresholds(newStart, newStop)
+                }
+              }
+            }
+          }
+
+          // Preset buttons
+          Row {
+            id: presetRow
+            width: parent.width
+            spacing: Style.space(6)
+
+            readonly property real cellWidth: (width - spacing * 2) / 3
+
+            Button {
+              width: presetRow.cellWidth
+              text: "Desk 55%"
+              tooltipText: "Conservation mode (50-55% for plugged-in use)"
+              fontSize: Style.font.bodySmall
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+              horizontalPadding: Style.space(4)
+              verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+              bordered: true
+              active: root.liveStartThreshold === 50 && root.liveStopThreshold === 55
+              onClicked: root.setThresholds(50, 55)
+            }
+
+            Button {
+              width: presetRow.cellWidth
+              text: "Balance 80%"
+              tooltipText: "Balanced longevity (75-80% threshold)"
+              fontSize: Style.font.bodySmall
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+              horizontalPadding: Style.space(4)
+              verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+              bordered: true
+              active: root.liveStartThreshold === 75 && root.liveStopThreshold === 80
+              onClicked: root.setThresholds(75, 80)
+            }
+
+            Button {
+              width: presetRow.cellWidth
+              text: "Full 100%"
+              tooltipText: "Full charge (95-100% threshold)"
+              fontSize: Style.font.bodySmall
+              foreground: root.bar.foreground
+              fontFamily: root.bar.fontFamily
+              horizontalPadding: Style.space(4)
+              verticalPadding: Style.spacing.controlPaddingY + Style.space(2)
+              bordered: true
+              active: root.liveStartThreshold === 95 && root.liveStopThreshold === 100
+              onClicked: root.setThresholds(95, 100)
             }
           }
         }
