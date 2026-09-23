@@ -69,7 +69,7 @@ This repository serves two primary purposes:
 │   │   │   ├── defaults/       # Default agent & app overrides
 │   │   │   ├── extensions/     # Omarchy menu extension JSONC
 │   │   │   ├── hooks/          # Lifecycle hooks (post-update, battery-low)
-│   │   │   ├── plugins/        # Custom plugins (sanjith.power)
+│   │   │   ├── plugins/        # Custom plugins (sanjith.power, sanjith.antigravity)
 │   │   │   ├── themes/         # Custom Aether-generated themes (hrc, mm93)
 │   │   │   └── backgrounds/    # Custom desktop wallpapers
 │   │   ├── starship.toml       # Minimal, fast prompt configuration
@@ -140,6 +140,10 @@ This repository serves two primary purposes:
 
 ### Omarchy Custom Plugins & Themes
 
+- **`sanjith.antigravity` Plugin (`dotfiles/.config/omarchy/plugins/sanjith.antigravity/`)**:
+  - Real-time Google Antigravity quota and rate limit monitor for the Omarchy status bar.
+  - Monitors 5-hour session windows and weekly limits for both Gemini and Claude/GPT models with live countdowns.
+  - Features self-contained Google Antigravity vector (`.svg`) and high-res (`.png`) assets with adaptive theme luminance support and interactive dashboard panel.
 - **`sanjith.power` Plugin (`dotfiles/.config/omarchy/plugins/sanjith.power/`)**:
   - Custom Omarchy top-bar widget displaying battery health, power profiles, and charging wattage.
   - Paired with system scripts: `omarchy-powerprofiles-list` and `omarchy-powerprofiles-set`.

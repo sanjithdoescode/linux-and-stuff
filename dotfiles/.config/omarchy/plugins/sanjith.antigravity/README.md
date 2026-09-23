@@ -15,7 +15,12 @@ This plugin displays real-time quota usage and limits for Google Antigravity (`a
 ## Features
 
 - **Theme Native**: Integrates seamlessly with all Omarchy themes (Gruvbox, Nord, Catppuccin, etc.) via `qs.Commons.Color` and `qs.Commons.Style`.
-- **Bar Widget**: Shows an icon and lowest remaining quota percentage (e.g. `84% 󰚩`).
+- **Bar Widget**: Shows the official Google Antigravity vector icon alongside the lowest remaining quota percentage (e.g. `89% `).
+- **Adaptive Branding Assets**:
+  - `assets/Google-Antigravity-Icon-Full-Color.png`: High-resolution full-color Google Antigravity logo featured in the hero dashboard.
+  - `assets/antigravity.svg`: Pure vector white SVG mark designed for dark bar themes.
+  - `assets/antigravity-light.svg`: Pure vector charcoal SVG mark (`#202124`) designed for light bar themes.
+  - Supports configurable `barIconStyle` (`"monochrome"` or `"color"`).
 - **Interactive Panel**:
   - `Left Click`: Toggle usage dashboard panel.
   - `Right Click`: Launch `agy` terminal CLI.

@@ -25,7 +25,8 @@
     "allowMultiple": false,
     "defaults": {
       "refreshIntervalSec": 60,
-      "showPercentage": true
+      "showPercentage": true,
+      "barIconStyle": "monochrome"
     },
     "schema": [
       {
@@ -43,6 +44,13 @@
         "type": "boolean",
         "label": "Show lowest quota percentage on bar button",
         "defaultValue": true
+      },
+      {
+        "key": "barIconStyle",
+        "type": "string",
+        "label": "Bar icon style",
+        "description": "Theme-matching monochrome vector or Google full color",
+        "defaultValue": "monochrome"
       }
     ]
   }

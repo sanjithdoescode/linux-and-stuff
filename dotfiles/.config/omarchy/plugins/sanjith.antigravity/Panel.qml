@@ -27,6 +27,17 @@ Panel {
 
   readonly property bool showPercentage: setting("showPercentage", true) === true
   readonly property int refreshIntervalSec: setting("refreshIntervalSec", 60)
+  readonly property string barIconStyle: setting("barIconStyle", "monochrome")
+
+  // Dynamically resolve the optimal icon based on theme luminance or user style preference
+  readonly property string barIconSource: {
+    if (root.barIconStyle === "color") {
+      return root.pluginDir + "/assets/Google-Antigravity-Icon-Full-Color.png"
+    }
+    var bg = (root.bar && root.bar.background) ? root.bar.background : Color.background
+    var lum = (0.2126 * bg.r) + (0.7152 * bg.g) + (0.0722 * bg.b)
+    return root.pluginDir + (lum >= 0.5 ? "/assets/antigravity-light.svg" : "/assets/antigravity.svg")
+  }
 
   property var usageData: null
   property bool loading: false
@@ -165,14 +176,55 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.barButtonText()
-    slotSize: Style.bar.iconSlot * (root.showPercentage && root.usageData && !vertical ? 2.2 : 1)
+    slotSize: Style.bar.iconSlot * (root.showPercentage && root.usageData && !vertical ? 2.3 : 1)
+    opticalSize: root.showPercentage && root.usageData && !vertical ? slotSize : Style.bar.iconCanvas
     active: root.alarming
     tooltipText: root.barTooltip()
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.RightButton) root.launchCLI()
       else if (buttonCode === Qt.MiddleButton) root.refresh(true)
       else root.toggle()
+    }
+
+    iconComponent: Component {
+      Row {
+        id: barRow
+        anchors.centerIn: parent
+        spacing: Style.space(4)
+
+        Text {
+          id: percentLabel
+          anchors.verticalCenter: parent.verticalCenter
+          visible: root.showPercentage && root.usageData && root.usageData.lowestRemainingPercent !== undefined && !button.vertical
+          text: (root.usageData && root.usageData.lowestRemainingPercent !== undefined)
+            ? (root.usageData.lowestRemainingPercent + "%")
+            : ""
+          color: root.alarming ? root.urgent : (button.active && button.useActiveColor ? button.activeColor : root.foreground)
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: true
+        }
+
+        Image {
+          id: barIcon
+          anchors.verticalCenter: parent.verticalCenter
+          width: Style.bar.iconCanvas
+          height: Style.bar.iconCanvas
+          source: root.barIconSource
+          fillMode: Image.PreserveAspectFit
+          mipmap: true
+          smooth: true
+        }
+
+        Text {
+          anchors.verticalCenter: parent.verticalCenter
+          visible: barIcon.status !== Image.Ready
+          text: "󰚩"
+          color: root.alarming ? root.urgent : root.foreground
+          font.family: root.fontFamily
+          font.pixelSize: Style.bar.iconFont
+        }
+      }
     }
   }
 
@@ -243,8 +295,10 @@ Panel {
                 Image {
                   id: heroIcon
                   anchors.fill: parent
-                  source: root.pluginDir + "/assets/antigravity.svg"
+                  source: root.pluginDir + "/assets/Google-Antigravity-Icon-Full-Color.png"
                   fillMode: Image.PreserveAspectFit
+                  mipmap: true
+                  smooth: true
                 }
 
                 Text {
