@@ -144,10 +144,12 @@ This repository serves two primary purposes:
   - Real-time Google Antigravity quota and rate limit monitor for the Omarchy status bar.
   - Monitors 5-hour session windows and weekly limits for both Gemini and Claude/GPT models with live countdowns.
   - Features self-contained Google Antigravity vector (`.svg`) and high-res (`.png`) assets with adaptive theme luminance support and interactive dashboard panel.
+  - See detailed [Plugin Guide](docs/antigravity-usage-plugin.md).
 - **`sanjith.power` Plugin (`dotfiles/.config/omarchy/plugins/sanjith.power/`)**:
   - Custom Omarchy top-bar widget displaying battery health, power profiles, and charging wattage.
   - Interactive dual sliders and presets to configure hardware battery charge start and stop thresholds (`charge_control_start_threshold` and `charge_control_end_threshold`).
   - Paired with backend scripts: `threshold.sh`, `omarchy-powerprofiles-list`, and `omarchy-powerprofiles-set`.
+  - See detailed [Plugin Guide](docs/power-management-plugin.md).
 - **Custom Aether Themes (`dotfiles/.config/omarchy/themes/`)**:
   - **`hrc`**: Deep dark theme with indigo/violet accents.
   - **`mm93`**: Warm dark theme with golden-amber and olive accents.
@@ -177,6 +179,8 @@ All custom functions and aliases are built into [`.zshrc`](dotfiles/.zshrc) and 
 | `Super + H` | Whisper push-to-talk voice dictation | [Guide](docs/hyprland-shortcuts.md) |
 | `Super + Shift + T`| Screen rectangle OCR text grabber | [Guide](docs/hyprland-shortcuts.md) |
 | `<leader>ag` / `<leader>as` | Antigravity AI Neovim right sidebar & code selection reference | [Guide](docs/antigravity-neovim-sidebar.md) |
+| `omarchy.power` (Bar Widget) | Battery telemetry, power profiles, and dual charge threshold sliders | [Guide](docs/power-management-plugin.md) |
+| `sanjith.antigravity` (Bar Widget) | Live quota and rate limit tracker for Gemini and Claude/GPT models | [Guide](docs/antigravity-usage-plugin.md) |
 
 ---
 

@@ -62,3 +62,5 @@ This directory documents all custom configurations, shell functions, keyboard sh
     Right-side AI companion sidebar in Neovim powered by `antigravity-cli.nvim` by NakLast, with context persistence and code selection sending.
 28. [**Google Antigravity Usage Omarchy Plugin**](antigravity-usage-plugin.md)
     Real-time bar widget and dashboard monitoring 5-hour and weekly rate limits for Gemini and Claude/GPT models with native Omarchy theme integration.
+29. [**Battery Charge Thresholds & Power Management Plugin**](power-management-plugin.md)
+    Custom bar widget with real-time battery wattage telemetry, ACPI power profile switcher, dual charge threshold sliders, and one-click presets.
