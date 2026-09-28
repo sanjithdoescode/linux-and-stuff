@@ -42,14 +42,15 @@ The Linux battery charging subsystem strictly enforces that `start_threshold <= 
 * Automatically writes `"Custom"` to `/sys/class/power_supply/BAT*/charge_types` when supported (required by Dell smbios/WMI drivers).
 
 ### 3. Passwordless Unprivileged Execution
-To prevent intrusive password prompts while adjusting sliders in the UI:
-* `/etc/tmpfiles.d/battery-charge-thresholds.conf` ensures `0664 root:wheel` permissions on boot.
-* `/etc/udev/rules.d/99-battery-charge-thresholds.rules` applies `0664 root:wheel` on hotplug and battery uevents.
-* [`threshold.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/threshold.sh) executes unprivileged writes directly, falling back to `pkexec` if sysfs permissions are ever reset.
+To prevent intrusive password prompts while adjusting sliders or switching profiles in the UI:
+* `/etc/tmpfiles.d/battery-charge-thresholds.conf` and `/etc/tmpfiles.d/platform-profile.conf` ensure `0664 root:wheel` permissions on boot.
+* `/etc/udev/rules.d/99-battery-charge-thresholds.rules` and `/etc/udev/rules.d/99-platform-profile.rules` apply `0664 root:wheel` on hotplug, platform, and battery uevents.
+* [`threshold.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/threshold.sh) and [`set.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/set.sh) execute unprivileged writes directly, with automatic fallback (`sudo -n` / `pkexec`) that auto-heals sysfs permissions if ever reset.
 
 ### 4. ACPI Power Profile Switching
 * Native integration with `power-profiles-daemon` and `/sys/firmware/acpi/platform_profile`.
 * Supports `cool`, `power-saver` (Eco), `balanced`, and `performance` modes.
+  * In `cool` mode, CPU is dialed to power-saver for lowest stress/voltage while ACPI platform profile engages active cooling fan curves to drastically reduce CPU temperature.
 * Stores and restores profile selections independently for AC and battery states.
 
 ---

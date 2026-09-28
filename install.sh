@@ -72,7 +72,7 @@ deploy_file() {
 
     # If destination exists and differs, create a timestamped backup
     if [ -e "$dest" ] || [ -L "$dest" ]; then
-        if [ "$MODE" = "link" ] && [ -L "$dest" ] && [ "$(readlink -f "$dest")" = "$(readlink -f "$src")" ]; then
+        if [ "$MODE" = "link" ] && [ "$(readlink -f "$dest")" = "$(readlink -f "$src")" ]; then
             log_info "Already linked: $rel_path"
             return 0
         fi
@@ -116,6 +116,26 @@ done
 if [ "$DRY_RUN" = false ]; then
     chmod +x "$TARGET_DIR/.local/bin/omarchy-powerprofiles-"* 2>/dev/null || true
     chmod +x "$TARGET_DIR/.config/omarchy/plugins/sanjith.power/"*.sh 2>/dev/null || true
+
+    # Install platform_profile udev rule if root/sudo is available
+    if [ -w /etc/udev/rules.d ]; then
+        cat << 'EOF' > /etc/udev/rules.d/99-platform-profile.rules
+# Grant wheel group write access to ACPI platform_profile
+SUBSYSTEM=="platform", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
+SUBSYSTEM=="power_supply", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
+SUBSYSTEM=="acpi", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
+EOF
+        udevadm control --reload 2>/dev/null || true
+    elif sudo -n true 2>/dev/null; then
+        sudo -n bash -c 'cat << "EOF" > /etc/udev/rules.d/99-platform-profile.rules
+# Grant wheel group write access to ACPI platform_profile
+SUBSYSTEM=="platform", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
+SUBSYSTEM=="power_supply", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
+SUBSYSTEM=="acpi", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
+EOF
+udevadm control --reload 2>/dev/null || true
+' 2>/dev/null || true
+    fi
 fi
 
 # Optional zsh plugins installation

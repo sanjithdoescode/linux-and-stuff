@@ -15,16 +15,25 @@ if [[ -r /sys/firmware/acpi/platform_profile ]]; then
   current_platform=$(< /sys/firmware/acpi/platform_profile)
 fi
 
+cool_supported=0
+if [[ -r /sys/firmware/acpi/platform_profile_choices ]] && grep -qw "cool" /sys/firmware/acpi/platform_profile_choices; then
+  cool_supported=1
+elif [[ "$current_platform" == "cool" ]]; then
+  cool_supported=1
+fi
+
 cool_active=0
 if [[ "$current_platform" == "cool" ]]; then
   cool_active=1
 fi
 
-# Print cool profile first
-if [[ -n "$with_state" ]]; then
-  echo -e "cool\t$cool_active"
-else
-  echo "cool"
+# Print cool profile first if supported
+if (( cool_supported )); then
+  if [[ -n "$with_state" ]]; then
+    echo -e "cool\t$cool_active"
+  else
+    echo "cool"
+  fi
 fi
 
 # Get standard profiles from powerprofilesctl

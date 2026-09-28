@@ -60,31 +60,45 @@ if [[ -z ${profile:-} ]] || ! profile_available "$profile"; then
   fi
 fi
 
+set_platform_profile() {
+  local target="$1"
+  local file="/sys/firmware/acpi/platform_profile"
+  [[ -f "$file" ]] || return 0
+
+  # Try direct unprivileged write first
+  if [[ -w "$file" ]] && echo "$target" > "$file" 2>/dev/null; then
+    return 0
+  fi
+
+  # Fallback 1: passwordless sudo (and fix permissions for subsequent writes)
+  if sudo -n true 2>/dev/null; then
+    sudo -n bash -c "echo '$target' > '$file' && chmod 0664 '$file' && chgrp wheel '$file'" 2>/dev/null && return 0
+  fi
+
+  # Fallback 2: pkexec if sudo is unavailable
+  pkexec bash -c "echo '$target' > '$file' && chmod 0664 '$file' && chgrp wheel '$file'" 2>/dev/null && return 0
+
+  echo "Failed to write '$target' to $file" >&2
+  return 1
+}
+
 apply_profile() {
   local p="$1"
   case "$p" in
     cool)
       powerprofilesctl set power-saver || return 1
-      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
-        echo cool > /sys/firmware/acpi/platform_profile
-      fi
+      set_platform_profile cool || return 1
       ;;
     power-saver)
-      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
-        echo quiet > /sys/firmware/acpi/platform_profile
-      fi
+      set_platform_profile quiet
       powerprofilesctl set power-saver || return 1
       ;;
     balanced)
-      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
-        echo balanced > /sys/firmware/acpi/platform_profile
-      fi
+      set_platform_profile balanced
       powerprofilesctl set balanced || return 1
       ;;
     performance)
-      if [[ -w /sys/firmware/acpi/platform_profile ]]; then
-        echo performance > /sys/firmware/acpi/platform_profile
-      fi
+      set_platform_profile performance
       powerprofilesctl set performance || return 1
       ;;
     *)

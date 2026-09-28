@@ -183,6 +183,7 @@ Panel {
 
   function setProfile(profile) {
     if (!profile || actionProc.running) return
+    activeProfile = profile
     actionProc.command = [root.pluginDir + "/set.sh", root.discharging ? "battery" : "ac", profile]
     actionProc.running = true
   }
