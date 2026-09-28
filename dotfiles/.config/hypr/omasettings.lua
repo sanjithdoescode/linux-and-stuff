@@ -2,11 +2,6 @@
 -- Every value here was set from the OmaSettings window; delete a line
 -- to hand that setting back to your own config.
 
-hl.config({
-  input = {
-    touchpad = {
-      scroll_factor = 0.60,
-    },
-  },
-})
 
+-- Workspaces set up from the Workspaces page.
+hl.workspace_rule({ workspace = "1", persistent = true, default_name = "main" })

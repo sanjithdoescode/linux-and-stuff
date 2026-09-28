@@ -188,31 +188,42 @@ All custom functions and aliases are built into [`.zshrc`](dotfiles/.zshrc) and 
 
 ### Automated Deployment (`install.sh`)
 
-The repository includes an interactive, safe deployment script that creates symlinks (or copies) directly to `$HOME`:
+The repository includes a modern, zero-dependency interactive TUI deployment script that detects your Linux distribution, installs missing prerequisite packages, allows granular component selection, and safely creates symlinks (or copies) directly to `$HOME`:
 
 ```bash
 # Clone the repository
 git clone https://github.com/sanjithdoescode/omarchy_changes.git
 cd omarchy_changes
 
-# 1. Preview changes without modifying any files (Dry Run)
+# 1. Launch the interactive TUI installer
+./install.sh
+
+# 2. Preview changes in TUI or batch mode without modifying files (Dry Run)
 ./install.sh --dry-run
 
-# 2. Symlink all dotfiles into $HOME (Backs up existing files automatically)
-./install.sh --link
-
-# 3. (Optional) Also clone external Zsh plugins (fzf-tab, autopair, etc.)
-./install.sh --link --plugins
+# 3. Non-interactive complete installation (accept defaults)
+./install.sh --all -y
 ```
+
+#### TUI Features:
+- 🖥️ **Distribution Detection**: Automatically recognizes Arch, Omarchy, Debian, Ubuntu, Fedora, openSUSE, Void, Alpine, and more to resolve and install required CLI prerequisites using the native package manager (`pacman`, `apt`, `dnf`, `zypper`, etc.).
+- 🎛️ **Granular Component Selection**: Pick exactly what to install—from Shell & Zsh plugins to Hyprland, Neovim, Tmux, Ghostty, Btop, and Omarchy power profiles.
+- ⚡ **Instant Presets**: Switch between `[1] Full Suite`, `[2] Minimal CLI`, and `[3] Desktop Only` with a single keypress.
+- 🛡️ **Confirmation & Safe Backups**: Review the installation plan before committing. If an existing destination file differs from the repository version, a timestamped backup (e.g., `~/.zshrc.backup.20260928221530`) is created automatically.
+- 📊 **Live Installer TUI**: Multi-step progress bar and real-time activity log during package installation, dotfile linking, and hardware rule setup.
 
 #### Flags & Options:
 - `--link` *(default)*: Symlinks files from `dotfiles/` to `$HOME`.
 - `--copy`: Copies files instead of symlinking.
 - `--dry-run`: Shows all planned operations without touching the disk.
 - `--plugins`: Automatically fetches missing Zsh plugins into `~/.zsh/plugins/`.
+- `--prereqs`: Automatically installs system prerequisites via detected package manager.
+- `--all`: Selects all components.
+- `-y, --yes`: Non-interactive mode (proceed without prompts).
+- `--no-tui`: Runs in standard batch output mode.
 
 > [!NOTE]  
-> If an existing destination file differs from the repository version, `install.sh` will create a timestamped backup (e.g., `~/.zshrc.backup.20260918113000`) before linking.
+> If an existing destination file differs from the repository version, `install.sh` will create a timestamped backup (e.g., `~/.zshrc.backup.20260928221530`) before linking or copying.
 
 ---
 

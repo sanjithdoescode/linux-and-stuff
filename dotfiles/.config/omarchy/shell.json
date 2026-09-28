@@ -4,34 +4,33 @@
     "layout": {
       "center": [
         {
+          "id": "io.github.ayandexyz.glance"
+        },
+        {
+          "id": "omarchy.microphone"
+        },
+        {
           "id": "omarchy.indicators"
         },
         {
           "id": "omarchy.keyboard-layout"
         },
         {
+          "id": "omarchy.clock",
           "format": "dddd HH:mm",
           "formatAlt": "d MMMM 'W'ww yyyy",
-          "id": "omarchy.clock",
-          "verticalFormat": "HH\n—\nmm"
+          "verticalFormat": "HH\n—\nmm",
+          "birthYear": 0,
+          "lifeExpectancy": 60
         },
         {
           "id": "omarchy.weather"
         },
         {
-          "id": "ianswope.apple-music"
-        },
-        {
           "id": "tahayvr.omasnap"
         },
         {
-          "id": "omarchy.microphone"
-        },
-        {
           "id": "omarchy.system-update"
-        },
-        {
-          "id": "io.github.ayandexyz.glance"
         }
       ],
       "left": [
@@ -45,7 +44,7 @@
           "id": "omarchy.active-window"
         },
         {
-          "id": "omarchy.media"
+          "id": "ianswope.apple-music"
         }
       ],
       "right": [
@@ -80,7 +79,8 @@
           "id": "omarchy.monitor"
         },
         {
-          "id": "sanjith.power"
+          "id": "sanjith.power",
+          "showPercentage": false
         }
       ]
     },

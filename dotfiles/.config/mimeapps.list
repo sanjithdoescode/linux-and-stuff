@@ -6,7 +6,7 @@ x-scheme-handler/about=chromium.desktop
 x-scheme-handler/unknown=chromium.desktop
 x-scheme-handler/mailto=omamail.desktop
 x-scheme-handler/codex=chatgpt.desktop
-application/vnd.openxmlformats-officedocument.wordprocessingml.document=libreoffice-writer.desktop
+application/vnd.openxmlformats-officedocument.wordprocessingml.document=com.collaboraoffice.Office.desktop
 
 [Added Associations]
-application/vnd.openxmlformats-officedocument.wordprocessingml.document=libreoffice-writer.desktop;
+application/vnd.openxmlformats-officedocument.wordprocessingml.document=libreoffice-writer.desktop;com.collaboraoffice.Office.desktop;
