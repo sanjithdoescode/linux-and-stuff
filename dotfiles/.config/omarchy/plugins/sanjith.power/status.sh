@@ -67,9 +67,29 @@ state=$(awk '/state/ { print $2; exit }' <<<"$battery_info")
 threshold_end=$(cat "$power_supply_path"/BAT*/charge_control_end_threshold 2>/dev/null | head -1)
 threshold_start=$(cat "$power_supply_path"/BAT*/charge_control_start_threshold 2>/dev/null | head -1)
 
+# Dell WMI sysman attributes (Inspiron/Latitude/XPS firmware where SMBIOS tokens were dropped/migrated)
+sysman_path="${OMARCHY_SYSMAN_PATH:-/sys/class/firmware-attributes/dell-wmi-sysman/attributes}"
+if [[ -z $threshold_end && -d "$sysman_path/CustomChargeStop" ]]; then
+  if [[ -r "$sysman_path/CustomChargeStop/current_value" ]]; then
+    threshold_end=$(<"$sysman_path/CustomChargeStop/current_value")
+  fi
+  if [[ -r "$sysman_path/CustomChargeStart/current_value" ]]; then
+    threshold_start=$(<"$sysman_path/CustomChargeStart/current_value")
+  fi
+fi
+
 # Fallback to UPower if sysfs is not present
 [[ -z $threshold_end ]] && threshold_end=$(awk '/charge-end-threshold:/ { gsub(/%/, "", $2); print int($2); exit }' <<<"$battery_info")
 [[ -z $threshold_start ]] && threshold_start=$(awk '/charge-start-threshold:/ { gsub(/%/, "", $2); print int($2); exit }' <<<"$battery_info")
+
+# Fallback to persisted state file if hardware supports thresholds but files aren't readable yet
+state_file="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/power/thresholds"
+if [[ -z $threshold_end && (-d "$sysman_path/CustomChargeStop" || $(find "$power_supply_path" -maxdepth 2 -name "charge_control_end_threshold" 2>/dev/null | head -1)) && -r "$state_file" ]]; then
+  # shellcheck source=/dev/null
+  source "$state_file" 2>/dev/null || true
+  threshold_start="${START:-}"
+  threshold_end="${STOP:-}"
+fi
 
 ac_online=false
 for supply in "$power_supply_path"/*; do

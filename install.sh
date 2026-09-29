@@ -651,16 +651,49 @@ SUBSYSTEM=="platform", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_
 SUBSYSTEM=="power_supply", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
 SUBSYSTEM=="acpi", ACTION=="add|change", TEST=="/sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chmod 0664 /sys/firmware/acpi/platform_profile", RUN+="/usr/bin/chgrp wheel /sys/firmware/acpi/platform_profile"
 '
+    # Udev rule for battery charge thresholds (standard sysfs & Dell WMI sysman)
+    local batt_udev_content
+    batt_udev_content='# Grant wheel group write access to battery charge control attributes
+SUBSYSTEM=="power_supply", KERNEL=="BAT*", ACTION=="add|change", RUN+="/usr/bin/chmod 0664 /sys/class/power_supply/%k/charge_control_start_threshold /sys/class/power_supply/%k/charge_control_end_threshold /sys/class/power_supply/%k/charge_types", RUN+="/usr/bin/chgrp wheel /sys/class/power_supply/%k/charge_control_start_threshold /sys/class/power_supply/%k/charge_control_end_threshold /sys/class/power_supply/%k/charge_types"
+SUBSYSTEM=="firmware-attributes", ACTION=="add|change", TEST=="/sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value", RUN+="/usr/bin/chmod 0664 /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value", RUN+="/usr/bin/chgrp wheel /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value"
+SUBSYSTEM=="platform", ACTION=="add|change", TEST=="/sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value", RUN+="/usr/bin/chmod 0664 /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value", RUN+="/usr/bin/chgrp wheel /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value"
+SUBSYSTEM=="wmi", ACTION=="add|change", TEST=="/sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value", RUN+="/usr/bin/chmod 0664 /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value", RUN+="/usr/bin/chgrp wheel /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value"
+'
+    local batt_tmpfiles_content
+    batt_tmpfiles_content='# Grant wheel group write access to battery charge control attributes
+z /sys/class/power_supply/BAT*/charge_control_start_threshold 0664 root wheel - -
+z /sys/class/power_supply/BAT*/charge_control_end_threshold 0664 root wheel - -
+z /sys/class/power_supply/BAT*/charge_types 0664 root wheel - -
+z /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStart/current_value 0664 root wheel - -
+z /sys/class/firmware-attributes/dell-wmi-sysman/attributes/CustomChargeStop/current_value 0664 root wheel - -
+z /sys/class/firmware-attributes/dell-wmi-sysman/attributes/PrimaryBattChargeCfg/current_value 0664 root wheel - -
+'
+
     if [ -w /etc/udev/rules.d ]; then
         printf "%s" "$udev_content" > /etc/udev/rules.d/99-platform-profile.rules
+        printf "%s" "$batt_udev_content" > /etc/udev/rules.d/99-battery-charge-thresholds.rules
+        [ -d /etc/tmpfiles.d ] && [ -w /etc/tmpfiles.d ] && printf "%s" "$batt_tmpfiles_content" > /etc/tmpfiles.d/battery-charge-thresholds.conf
         udevadm control --reload 2>/dev/null || true
-        "$log_fn" "${C_GREEN}Installed:${RESET} /etc/udev/rules.d/99-platform-profile.rules"
+        command -v systemd-tmpfiles >/dev/null 2>&1 && systemd-tmpfiles --create /etc/tmpfiles.d/battery-charge-thresholds.conf 2>/dev/null || true
+        "$log_fn" "${C_GREEN}Installed:${RESET} Hardware power profile and battery charge threshold rules"
+    elif command -v run0 >/dev/null 2>&1; then
+        run0 bash -c "
+            printf '%s' \"$udev_content\" > /etc/udev/rules.d/99-platform-profile.rules
+            printf '%s' \"$batt_udev_content\" > /etc/udev/rules.d/99-battery-charge-thresholds.rules
+            mkdir -p /etc/tmpfiles.d && printf '%s' \"$batt_tmpfiles_content\" > /etc/tmpfiles.d/battery-charge-thresholds.conf
+            udevadm control --reload 2>/dev/null || true
+            command -v systemd-tmpfiles >/dev/null 2>&1 && systemd-tmpfiles --create /etc/tmpfiles.d/battery-charge-thresholds.conf 2>/dev/null || true
+        " 2>/dev/null || true
+        "$log_fn" "${C_GREEN}Installed via run0:${RESET} Hardware power profile and battery charge threshold rules"
     elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
         echo "$udev_content" | sudo tee /etc/udev/rules.d/99-platform-profile.rules >/dev/null 2>&1 || true
+        echo "$batt_udev_content" | sudo tee /etc/udev/rules.d/99-battery-charge-thresholds.rules >/dev/null 2>&1 || true
+        echo "$batt_tmpfiles_content" | sudo tee /etc/tmpfiles.d/battery-charge-thresholds.conf >/dev/null 2>&1 || true
         sudo udevadm control --reload 2>/dev/null || true
-        "$log_fn" "${C_GREEN}Installed via sudo:${RESET} /etc/udev/rules.d/99-platform-profile.rules"
+        sudo systemd-tmpfiles --create /etc/tmpfiles.d/battery-charge-thresholds.conf 2>/dev/null || true
+        "$log_fn" "${C_GREEN}Installed via sudo:${RESET} Hardware power profile and battery charge threshold rules"
     else
-        "$log_fn" "${C_YELLOW}Note: Sudo required for udev rule; skipped hardware power profile udev config.${RESET}"
+        "$log_fn" "${C_YELLOW}Note: Root privileges required for udev rule; skipped hardware power profile and battery threshold udev config.${RESET}"
     fi
 }
 

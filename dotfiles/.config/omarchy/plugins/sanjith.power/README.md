@@ -45,11 +45,12 @@ Enables hardware charge threshold limiting to extend laptop battery longevity, i
 
 ### 4. Zero-Friction Permissions & Persistence
 * Built with non-blocking unprivileged access:
-  * [`/etc/udev/rules.d/99-battery-charge-thresholds.rules`](file:///etc/udev/rules.d/99-battery-charge-thresholds.rules) and [`/etc/udev/rules.d/99-platform-profile.rules`](file:///etc/udev/rules.d/99-platform-profile.rules) configure `0664 root:wheel` access on battery and ACPI platform profile sysfs attributes.
+  * Supports standard ACPI sysfs battery nodes (`BAT*/charge_control_*`) and modern Dell WMI sysman attributes (`CustomChargeStart` / `CustomChargeStop` / `PrimaryBattChargeCfg`).
+  * [`/etc/udev/rules.d/99-battery-charge-thresholds.rules`](file:///etc/udev/rules.d/99-battery-charge-thresholds.rules) and [`/etc/udev/rules.d/99-platform-profile.rules`](file:///etc/udev/rules.d/99-platform-profile.rules) configure `0664 root:wheel` access on battery, Dell sysman attributes, and ACPI platform profile sysfs nodes.
   * [`/etc/tmpfiles.d/battery-charge-thresholds.conf`](file:///etc/tmpfiles.d/battery-charge-thresholds.conf) and [`/etc/tmpfiles.d/platform-profile.conf`](file:///etc/tmpfiles.d/platform-profile.conf) maintain permissions across reboots.
-  * Both threshold and power profile setters implement automatic fallback (`sudo -n` / `pkexec`) that heals permissions if sysfs resets.
+  * Both threshold and power profile setters implement automatic fallback (`sudo -n` / `run0` / `pkexec`) that heals permissions if sysfs resets.
   * Sliders, presets, and power profiles adjust instantly without password prompts.
-  * Automatically sets `charge_types` to `Custom` on Dell and compatible hardware.
+  * Automatically sets charge modes to `Custom` on Dell and compatible hardware.
   * Threshold states are persisted to `~/.local/state/omarchy/power/thresholds`, and profile states to `~/.local/state/omarchy/powerprofiles`.
 
 ---

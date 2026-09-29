@@ -34,18 +34,19 @@ The plugin introduces fine-grained charge limit control directly into the Omarch
   * **Balance 80%** (`75% – 80%`): Optimal daily balance between mobility and battery longevity.
   * **Full 100%** (`95% – 100%`): Full capacity for travel.
 
-### 2. Sequence-Safe Kernel Sysfs Writes
-The Linux battery charging subsystem strictly enforces that `start_threshold <= end_threshold` at every instant. Writing thresholds in the wrong order causes the kernel to reject the update.
+### 2. Sequence-Safe Kernel Sysfs & Firmware Writes
+The Linux battery charging subsystem strictly enforces that `start_threshold <= end_threshold` at every instant. Writing thresholds in the wrong order causes the kernel or firmware to reject the update.
 [`threshold.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/threshold.sh) dynamically evaluates whether thresholds are increasing or decreasing:
 * **Increasing**: Raises the stop threshold first, then raises the start threshold.
 * **Decreasing**: Lowers the start threshold first, then lowers the stop threshold.
-* Automatically writes `"Custom"` to `/sys/class/power_supply/BAT*/charge_types` when supported (required by Dell smbios/WMI drivers).
+* Supports both standard kernel power supply sysfs nodes (`BAT*/charge_control_*`) and modern Dell WMI sysman firmware attributes (`CustomChargeStart` / `CustomChargeStop`), ensuring compatibility across BIOS updates (including BIOS 1.43+ where legacy SMBIOS tokens were migrated).
+* Automatically sets charge modes to `"Custom"` (`charge_types` or `PrimaryBattChargeCfg`) when supported.
 
 ### 3. Passwordless Unprivileged Execution
 To prevent intrusive password prompts while adjusting sliders or switching profiles in the UI:
 * `/etc/tmpfiles.d/battery-charge-thresholds.conf` and `/etc/tmpfiles.d/platform-profile.conf` ensure `0664 root:wheel` permissions on boot.
-* `/etc/udev/rules.d/99-battery-charge-thresholds.rules` and `/etc/udev/rules.d/99-platform-profile.rules` apply `0664 root:wheel` on hotplug, platform, and battery uevents.
-* [`threshold.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/threshold.sh) and [`set.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/set.sh) execute unprivileged writes directly, with automatic fallback (`sudo -n` / `pkexec`) that auto-heals sysfs permissions if ever reset.
+* `/etc/udev/rules.d/99-battery-charge-thresholds.rules` and `/etc/udev/rules.d/99-platform-profile.rules` apply `0664 root:wheel` on hotplug, platform, Dell sysman, and battery uevents.
+* [`threshold.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/threshold.sh) and [`set.sh`](file:///home/sanjith/Projects/omarchy_changes/dotfiles/.config/omarchy/plugins/sanjith.power/set.sh) execute unprivileged writes directly, with automatic fallback (`sudo -n` / `run0` / `pkexec`) that auto-heals sysfs permissions if ever reset.
 
 ### 4. ACPI Power Profile Switching
 * Native integration with `power-profiles-daemon` and `/sys/firmware/acpi/platform_profile`.

@@ -6,6 +6,7 @@
 set -euo pipefail
 
 power_supply_path="${OMARCHY_POWER_SUPPLY_PATH:-/sys/class/power_supply}"
+sysman_path="${OMARCHY_SYSMAN_PATH:-/sys/class/firmware-attributes/dell-wmi-sysman/attributes}"
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/power"
 state_file="$state_dir/thresholds"
 
@@ -25,15 +26,52 @@ if [[ -z "$BATTERY_PATH" ]]; then
   exit 1
 fi
 
+elevate_cmd() {
+  local cmd="$1"
+  if sudo -n true 2>/dev/null; then
+    sudo -n bash -c "$cmd" && return 0
+  fi
+  if command -v run0 >/dev/null 2>&1; then
+    run0 bash -c "$cmd" && return 0
+  fi
+  if command -v pkexec >/dev/null 2>&1; then
+    pkexec bash -c "$cmd" && return 0
+  fi
+  return 1
+}
+
 get_thresholds() {
   local start=""
   local stop=""
-  if [[ -r "$BATTERY_PATH/charge_control_start_threshold" ]]; then
-    start=$(<"$BATTERY_PATH/charge_control_start_threshold")
+
+  # 1. Try standard sysfs battery attributes
+  if [[ -n "$BATTERY_PATH" ]]; then
+    if [[ -r "$BATTERY_PATH/charge_control_start_threshold" ]]; then
+      start=$(<"$BATTERY_PATH/charge_control_start_threshold")
+    fi
+    if [[ -r "$BATTERY_PATH/charge_control_end_threshold" ]]; then
+      stop=$(<"$BATTERY_PATH/charge_control_end_threshold")
+    fi
   fi
-  if [[ -r "$BATTERY_PATH/charge_control_end_threshold" ]]; then
-    stop=$(<"$BATTERY_PATH/charge_control_end_threshold")
+
+  # 2. Try Dell WMI sysman attributes (Inspiron/Latitude/XPS firmware)
+  if [[ -z "$stop" && -d "$sysman_path/CustomChargeStop" ]]; then
+    if [[ -r "$sysman_path/CustomChargeStart/current_value" ]]; then
+      start=$(<"$sysman_path/CustomChargeStart/current_value")
+    fi
+    if [[ -r "$sysman_path/CustomChargeStop/current_value" ]]; then
+      stop=$(<"$sysman_path/CustomChargeStop/current_value")
+    fi
   fi
+
+  # 3. Fallback to persisted state file if readable
+  if [[ -z "$stop" && -r "$state_file" ]]; then
+    # shellcheck source=/dev/null
+    source "$state_file" 2>/dev/null || true
+    start="${START:-}"
+    stop="${STOP:-}"
+  fi
+
   echo "start=${start:-50} stop=${stop:-55}"
 }
 
@@ -62,47 +100,99 @@ set_thresholds() {
     (( start < 50 )) && start=50
   fi
 
-  # Ensure charge_types is Custom if present
-  if [[ -w "$BATTERY_PATH/charge_types" ]]; then
-    echo "Custom" > "$BATTERY_PATH/charge_types" 2>/dev/null || true
+  local has_sysfs=false
+  local has_sysman=false
+
+  if [[ -n "$BATTERY_PATH" && -f "$BATTERY_PATH/charge_control_end_threshold" ]]; then
+    has_sysfs=true
   fi
 
-  local current_start=50
-  local current_stop=55
-  if [[ -r "$BATTERY_PATH/charge_control_start_threshold" ]]; then
-    current_start=$(<"$BATTERY_PATH/charge_control_start_threshold")
-  fi
-  if [[ -r "$BATTERY_PATH/charge_control_end_threshold" ]]; then
-    current_stop=$(<"$BATTERY_PATH/charge_control_end_threshold")
+  if [[ -d "$sysman_path/CustomChargeStop" ]]; then
+    has_sysman=true
   fi
 
-  # Write in correct sequence to satisfy kernel invariant (start <= stop)
-  local write_ok=true
-  if (( stop > current_stop )); then
-    # Moving up: raise stop threshold first, then raise start threshold
-    echo "$stop" > "$BATTERY_PATH/charge_control_end_threshold" 2>/dev/null || write_ok=false
-    echo "$start" > "$BATTERY_PATH/charge_control_start_threshold" 2>/dev/null || write_ok=false
-  else
-    # Moving down: lower start threshold first, then lower stop threshold
-    echo "$start" > "$BATTERY_PATH/charge_control_start_threshold" 2>/dev/null || write_ok=false
-    echo "$stop" > "$BATTERY_PATH/charge_control_end_threshold" 2>/dev/null || write_ok=false
+  if [[ "$has_sysfs" == false && "$has_sysman" == false ]]; then
+    echo "Hardware charge threshold control is not supported on this device" >&2
+    exit 1
   fi
 
-  # Fallback to pkexec if direct write wasn't permitted
-  if [[ "$write_ok" == false ]]; then
-    pkexec bash -c "
-      [[ -f '$BATTERY_PATH/charge_types' ]] && echo 'Custom' > '$BATTERY_PATH/charge_types' 2>/dev/null || true
-      if (( $stop > $current_stop )); then
-        echo '$stop' > '$BATTERY_PATH/charge_control_end_threshold'
-        echo '$start' > '$BATTERY_PATH/charge_control_start_threshold'
+  # 1. Update standard sysfs power_supply if supported
+  if [[ "$has_sysfs" == true ]]; then
+    # Ensure charge_types is Custom if present
+    if [[ -w "$BATTERY_PATH/charge_types" ]]; then
+      echo "Custom" > "$BATTERY_PATH/charge_types" 2>/dev/null || true
+    fi
+
+    local current_start=50
+    local current_stop=55
+    if [[ -r "$BATTERY_PATH/charge_control_start_threshold" ]]; then
+      current_start=$(<"$BATTERY_PATH/charge_control_start_threshold")
+    fi
+    if [[ -r "$BATTERY_PATH/charge_control_end_threshold" ]]; then
+      current_stop=$(<"$BATTERY_PATH/charge_control_end_threshold")
+    fi
+
+    local write_ok=true
+    if (( stop > current_stop )); then
+      echo "$stop" > "$BATTERY_PATH/charge_control_end_threshold" 2>/dev/null || write_ok=false
+      echo "$start" > "$BATTERY_PATH/charge_control_start_threshold" 2>/dev/null || write_ok=false
+    else
+      echo "$start" > "$BATTERY_PATH/charge_control_start_threshold" 2>/dev/null || write_ok=false
+      echo "$stop" > "$BATTERY_PATH/charge_control_end_threshold" 2>/dev/null || write_ok=false
+    fi
+
+    if [[ "$write_ok" == false ]]; then
+      local cmd=""
+      if (( stop > current_stop )); then
+        cmd="[[ -f '$BATTERY_PATH/charge_types' ]] && echo 'Custom' > '$BATTERY_PATH/charge_types' 2>/dev/null || true; echo '$stop' > '$BATTERY_PATH/charge_control_end_threshold' && echo '$start' > '$BATTERY_PATH/charge_control_start_threshold'"
       else
-        echo '$start' > '$BATTERY_PATH/charge_control_start_threshold'
-        echo '$stop' > '$BATTERY_PATH/charge_control_end_threshold'
+        cmd="[[ -f '$BATTERY_PATH/charge_types' ]] && echo 'Custom' > '$BATTERY_PATH/charge_types' 2>/dev/null || true; echo '$start' > '$BATTERY_PATH/charge_control_start_threshold' && echo '$stop' > '$BATTERY_PATH/charge_control_end_threshold'"
       fi
-    " || {
-      echo "Failed to write charge thresholds to sysfs" >&2
-      exit 1
-    }
+      cmd="$cmd; chmod 0664 '$BATTERY_PATH'/charge_control_* '$BATTERY_PATH'/charge_types 2>/dev/null && chgrp wheel '$BATTERY_PATH'/charge_control_* '$BATTERY_PATH'/charge_types 2>/dev/null || true"
+      elevate_cmd "$cmd" || {
+        echo "Failed to write charge thresholds to sysfs" >&2
+        exit 1
+      }
+    fi
+  fi
+
+  # 2. Update Dell WMI sysman attributes if supported (BIOS 1.43+)
+  if [[ "$has_sysman" == true ]]; then
+    if [[ -w "$sysman_path/PrimaryBattChargeCfg/current_value" ]]; then
+      echo "Custom" > "$sysman_path/PrimaryBattChargeCfg/current_value" 2>/dev/null || true
+    fi
+
+    local current_start=50
+    local current_stop=55
+    if [[ -r "$sysman_path/CustomChargeStart/current_value" ]]; then
+      current_start=$(<"$sysman_path/CustomChargeStart/current_value")
+    fi
+    if [[ -r "$sysman_path/CustomChargeStop/current_value" ]]; then
+      current_stop=$(<"$sysman_path/CustomChargeStop/current_value")
+    fi
+
+    local write_ok=true
+    if (( stop > current_stop )); then
+      echo "$stop" > "$sysman_path/CustomChargeStop/current_value" 2>/dev/null || write_ok=false
+      echo "$start" > "$sysman_path/CustomChargeStart/current_value" 2>/dev/null || write_ok=false
+    else
+      echo "$start" > "$sysman_path/CustomChargeStart/current_value" 2>/dev/null || write_ok=false
+      echo "$stop" > "$sysman_path/CustomChargeStop/current_value" 2>/dev/null || write_ok=false
+    fi
+
+    if [[ "$write_ok" == false ]]; then
+      local cmd=""
+      if (( stop > current_stop )); then
+        cmd="echo 'Custom' > '$sysman_path/PrimaryBattChargeCfg/current_value' 2>/dev/null || true; echo '$stop' > '$sysman_path/CustomChargeStop/current_value' && echo '$start' > '$sysman_path/CustomChargeStart/current_value'"
+      else
+        cmd="echo 'Custom' > '$sysman_path/PrimaryBattChargeCfg/current_value' 2>/dev/null || true; echo '$start' > '$sysman_path/CustomChargeStart/current_value' && echo '$stop' > '$sysman_path/CustomChargeStop/current_value'"
+      fi
+      cmd="$cmd; chmod 0664 '$sysman_path'/CustomCharge{Start,Stop}/current_value '$sysman_path'/PrimaryBattChargeCfg/current_value 2>/dev/null && chgrp wheel '$sysman_path'/CustomCharge{Start,Stop}/current_value '$sysman_path'/PrimaryBattChargeCfg/current_value 2>/dev/null || true"
+      elevate_cmd "$cmd" || {
+        echo "Failed to write charge thresholds to Dell sysman" >&2
+        exit 1
+      }
+    fi
   fi
 
   # Persist chosen thresholds
