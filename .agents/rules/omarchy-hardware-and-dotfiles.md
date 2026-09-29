@@ -25,3 +25,21 @@ When modifying `install.sh` or handling dotfile symlinks:
 When plugins in `~/.config/omarchy/plugins/` or `shell.json` are modified:
 - Verify that `omarchy-shell` registers the plugin using `omarchy-shell shell listPlugins`.
 - Use `omarchy-shell shell reloadConfig` and `omarchy-shell shell rescanPlugins` to trigger reload without requiring a full desktop restart.
+
+## 4. Hyprland & Omarchy Lua Configuration Invariants
+When modifying `dotfiles/.config/hypr/*.lua` or Omarchy desktop bindings:
+- **Global Config Scope (`hl.config`)**: Never call pseudo-functions like `hl.decoration(...)`, `hl.misc(...)`, or `hl.general(...)`. All compositor settings must be applied via `hl.config({ <section> = { ... } })` (e.g., `hl.config({ decoration = { dim_special = 0.3 } })`).
+- **Workspace & Window Rules**:
+  - For workspace rules (such as `on_created_empty`), call `hl.workspace_rule({ workspace = "special:<name>", on_created_empty = "..." })`.
+  - For window rules, call Omarchy's built-in helper `o.window(match_class, rules_table)` (which delegates to `hl.window_rule`).
+- **Dispatchers**:
+  - To toggle special workspaces, use `hl.dsp.workspace.toggle_special(name)` (do NOT use `hl.dsp.togglespecialworkspace`).
+- **Binary Existence Checks**:
+  - Never use `os.execute("command -v ...")` inside Hyprland Lua files (the compositor reaps child processes asynchronously, breaking exit code retrieval).
+  - Always use Omarchy's built-in `o.cmd_present("binary_name")` helper.
+- **Desktop Subsystem Ownership (Idle & Lock)**:
+  - DPMS and screensaver timeouts are NOT Hyprland compositor properties. They are owned by Omarchy's `omarchy.idle` Quickshell service in `~/.config/omarchy/shell.json`.
+  - Manual lock/screensaver bindings should dispatch `omarchy-screensaver` or `omarchy-system-lock`.
+- **Mandatory Verification**:
+  - After modifying any Hyprland Lua config, ALWAYS run `hyprctl reload && hyprctl configerrors`.
+  - Assert that `hyprctl configerrors` returns completely empty before completing any Hyprland-related task.

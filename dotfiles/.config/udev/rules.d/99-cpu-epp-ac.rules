@@ -1,0 +1,28 @@
+# /etc/udev/rules.d/99-cpu-epp-ac.rules
+#
+# Automatically adjust CPU Energy Performance Preference (EPP) when
+# the AC power adapter is connected or disconnected.
+#
+# AC plugged in  → balance_performance (responsive, moderate power)
+# AC unplugged   → power              (maximum battery life)
+#
+# This rule triggers omarchy-set-epp as the logged-in user so that
+# the user-level privilege escalation chain in that script applies.
+#
+# Installed by: install.sh configure_hardware_rules()
+# Backed by:    No tmpfiles.d needed (sysfs file permissions are handled
+#               separately; this rule is purely event-driven).
+
+# AC adapter connected → set EPP to balance_performance
+SUBSYSTEM=="power_supply", \
+  ENV{POWER_SUPPLY_NAME}=="AC", \
+  ENV{POWER_SUPPLY_ONLINE}=="1", \
+  ACTION=="change", \
+  RUN+="/bin/sh -c '/usr/bin/runuser -l \"$(logname 2>/dev/null || echo root)\" -c \"%h/.local/bin/omarchy-set-epp balance_performance\" 2>/dev/null || true'"
+
+# AC adapter disconnected → set EPP to power (maximum battery saving)
+SUBSYSTEM=="power_supply", \
+  ENV{POWER_SUPPLY_NAME}=="AC", \
+  ENV{POWER_SUPPLY_ONLINE}=="0", \
+  ACTION=="change", \
+  RUN+="/bin/sh -c '/usr/bin/runuser -l \"$(logname 2>/dev/null || echo root)\" -c \"%h/.local/bin/omarchy-set-epp power\" 2>/dev/null || true'"

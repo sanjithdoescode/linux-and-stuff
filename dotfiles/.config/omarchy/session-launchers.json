@@ -1,0 +1,27 @@
+{
+  // Omarchy session launcher map for wrestore.
+  // Maps window class names (from hyprctl clients) to the shell command
+  // used to launch that application.
+  //
+  // When wrestore reads a saved session JSON, it looks up each window's
+  // class here to find the right launch command. If a class is not found,
+  // it falls back to using the class name directly as the command.
+  //
+  // Format:  "class-name": "launch-command"
+  //
+  // Examples:
+  "firefox": "firefox",
+  "Brave-browser": "brave",
+  "Alacritty": "alacritty",
+  "kitty": "kitty",
+  "ghostty": "ghostty",
+  "org.gnome.Nautilus": "nautilus",
+  "thunar": "thunar",
+  "code": "code",
+  "code-url-handler": "code",
+  "nvim": "ghostty -e nvim",
+  "sp-lazygit": "ghostty --class=sp-lazygit -e lazygit",
+  "sp-lazydocker": "ghostty --class=sp-lazydocker -e lazydocker",
+  "sp-btop": "ghostty --class=sp-btop -e btop",
+  "sp-agy": "ghostty --class=sp-agy -e agy"
+}

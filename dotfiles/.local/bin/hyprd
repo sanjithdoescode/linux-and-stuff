@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# hyprd — Hyprland IPC Event Daemon
+# Listens on socket2 and reacts to Hyprland events:
+#   - monitoradded/removed  → desktop notification
+#   - switch (lid)          → disable/re-enable eDP-1 when external monitor present
+#   - workspace             → append to workspace activity log (used by panel-health)
+#
+# Run as a systemd user service:
+#   systemctl --user enable --now hyprd
+#
+# Requires: socat, hyprctl, notify-send (libnotify)
+
+set -euo pipefail
+
+# Verify required dependencies
+if ! command -v socat >/dev/null 2>&1; then
+    echo "hyprd: socat is required (install: pacman -S socat)" >&2
+    exit 1
+fi
+if ! command -v hyprctl >/dev/null 2>&1; then
+    echo "hyprd: hyprctl is required" >&2
+    exit 1
+fi
+
+# Hyprland IPC socket2 path
+if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]]; then
+    echo "hyprd: HYPRLAND_INSTANCE_SIGNATURE not set — not in a Hyprland session" >&2
+    exit 1
+fi
+SOCK="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/${HYPRLAND_INSTANCE_SIGNATURE}/.socket2.sock"
+if [[ ! -S "$SOCK" ]]; then
+    echo "hyprd: socket2 not found at $SOCK" >&2
+    exit 1
+fi
+
+# Workspace activity log for panel-health
+LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy"
+mkdir -p "$LOG_DIR"
+WLOG="$LOG_DIR/workspace.log"
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+notify() {
+    notify-send -u low -t 3000 -a "hyprd" "$@" 2>/dev/null &
+}
+
+# Count external monitors (non-eDP-1) currently connected
+external_monitors_count() {
+    hyprctl monitors -j 2>/dev/null | \
+        jq '[.[] | select(.name != "eDP-1")] | length' 2>/dev/null || echo 0
+}
+
+# ── Event Loop ───────────────────────────────────────────────────────────────
+
+echo "hyprd: listening on $SOCK" >&2
+
+socat -U - "UNIX-CONNECT:$SOCK" 2>/dev/null | while IFS= read -r line; do
+    event="${line%%>>*}"
+    data="${line#*>>}"
+
+    case "$event" in
+        monitoradded)
+            notify "🖥 Monitor Connected" "$data" ;;
+
+        monitorremoved)
+            notify "🖥 Monitor Disconnected" "$data" ;;
+
+        switch)
+            # data format: <state>><device>  e.g. "on>>Lid Switch"
+            state="${data%%>>*}"
+            device="${data#*>>}"
+            if [[ "$device" == "Lid Switch" ]]; then
+                if [[ "$state" == "on" ]] && (( $(external_monitors_count) > 0 )); then
+                    # Lid closed with external monitor — disable built-in display
+                    hyprctl keyword monitor "eDP-1, disable" 2>/dev/null &
+                elif [[ "$state" == "off" ]]; then
+                    # Lid opened — restore built-in display
+                    hyprctl keyword monitor "eDP-1, preferred, 0x0, 1" 2>/dev/null &
+                fi
+            fi ;;
+
+        workspace)
+            # Append timestamped workspace switch to activity log
+            printf '%s workspace %s\n' "$(date +%s)" "$data" >> "$WLOG" &
+            ;;
+
+        # Hook point for future extensions — uncomment to enable:
+        # activewindow)
+        #   : handle active window changes ;;
+        # fullscreen)
+        #   : handle fullscreen toggle ;;
+    esac
+done
+
+echo "hyprd: socat connection closed — exiting" >&2

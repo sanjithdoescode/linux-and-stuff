@@ -1,0 +1,13 @@
+#!/bin/bash
+# post-boot hook: enable & start the hyprd IPC event daemon
+# Placed in ~/.config/omarchy/hooks/post-boot.d/ so Omarchy runs it on boot.
+# Safe to run multiple times (systemctl enable is idempotent).
+
+# Verify hyprd binary exists before enabling
+if [[ ! -x "${HOME}/.local/bin/hyprd" ]]; then
+    echo "start-hyprd.hook: hyprd not found at ~/.local/bin/hyprd — skipping" >&2
+    exit 0
+fi
+
+# Enable and start the service; ignore errors if already running
+systemctl --user enable --now hyprd.service 2>/dev/null || true

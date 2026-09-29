@@ -1,0 +1,18 @@
+[Unit]
+Description=Hyprland IPC Event Daemon (hyprd)
+Documentation=file://%h/.local/bin/hyprd
+# Start after the Hyprland Wayland session is available
+After=hyprland-session.target graphical-session.target
+Requires=hyprland-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hyprd
+# Restart automatically if the daemon crashes or the socket drops
+Restart=on-failure
+RestartSec=3s
+# Give the Hyprland socket a moment to appear on fast logins
+ExecStartPre=/bin/sh -c 'for i in 1 2 3 4 5; do [ -S "$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/.socket2.sock" ] && exit 0; sleep 1; done; exit 1'
+
+[Install]
+WantedBy=hyprland-session.target graphical-session.target

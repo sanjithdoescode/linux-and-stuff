@@ -64,3 +64,22 @@ This directory documents all custom configurations, shell functions, keyboard sh
     Real-time bar widget and dashboard monitoring 5-hour and weekly rate limits for Gemini and Claude/GPT models with native Omarchy theme integration.
 29. [**Battery Charge Thresholds & Power Management Plugin**](power-management-plugin.md)
     Custom bar widget with real-time battery wattage telemetry, ACPI power profile switcher, dual charge threshold sliders, and one-click presets.
+30. [**Hyprland IPC Event Daemon (`hyprd`)**](hyprland-ipc-daemon.md)
+    Persistent systemd user service that reacts to monitor hotplug, lid-close (auto-disable built-in display), and workspace switches — feeds the workspace log for panel-health.
+31. [**Interactive PipeWire Sink Switcher (`faudio`)**](faudio-audio-router.md)
+    Route any running audio stream to any output device (speakers, headphones, HDMI, Bluetooth) via a two-step `fzf` picker using `wpctl`.
+32. [**Systemd Service Manager TUI (`fserv`)**](fserv-service-manager.md)
+    Fuzzy-search user or system services with live status previews; start/stop/restart/enable/disable/logs via `Enter` action picker and `Ctrl-L`/`Ctrl-X` shortcuts.
+33. [**AI Shell Error Diagnostician (`explain` / `Alt+E`)**](shell-error-diagnostician.md)
+    After any command fails, press `Alt+E` to pipe the last command and exit code into Antigravity AI for an instant explanation and corrected command.
+34. [**AI Semantic Git Commit Generator (`gcai`)**](ai-git-commit.md)
+    Generate a Conventional Commits message from staged diff via Antigravity Gemini Flash; review and edit inline in `fzf` before committing.
+35. [**Interactive Git Branch & PR Manager (`fpr`)**](fpr-branch-pr-manager.md)
+    Browse all branches with log previews; single-key checkout, merge, delete, push+open PR URL, or rebase from a unified `fzf` panel.
+36. [**CPU EPP / Governor Power-Event Coupling**](cpu-epp-automation.md)
+    `omarchy-set-epp` script + AC udev rule that automatically sets Energy Performance Preference to `balance_performance` on AC connect and `power` on battery.
+37. [**Workspace Session Snapshot & Restore (`wsave` / `wrestore`)**](workspace-session-manager.md)
+    Snapshot the current Hyprland window layout to JSON and restore it later, re-launching each app in its saved workspace.
+38. [**OLED Panel Health & Static-Display Monitor (`panel-health`)**](oled-panel-protection.md)
+    Terminal burn-in risk reporter analyzing workspace dwell duration from the `hyprd` IPC event stream.
+

@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# omarchy-set-epp — Set CPU Energy Performance Preference on all cores
+#
+# Usage: omarchy-set-epp <epp_value>
+#
+# Valid EPP values (most→least power hungry):
+#   performance | balance_performance | balance_power | power
+#
+# This script is called by:
+#   - The AC udev rule (99-cpu-epp-ac.rules) on AC plug/unplug
+#   - The hyprd daemon on lid-close (via configure_hardware_rules hook)
+#   - Manually from the shell
+#
+# Privilege escalation chain (mirrors sanjith.power/set.sh pattern):
+#   unprivileged write → sudo -n → run0 → pkexec
+#
+# Hardware invariant: reads current value before writing (idempotent).
+
+set -euo pipefail
+
+VALID_VALUES="performance balance_performance balance_power power"
+
+# ── Argument validation ─────────────────────────────────────────────────────
+TARGET="${1:-}"
+if [[ -z "$TARGET" ]]; then
+    echo "Usage: omarchy-set-epp <$(echo "$VALID_VALUES" | tr ' ' '|')>" >&2
+    exit 2
+fi
+
+if ! echo "$VALID_VALUES" | grep -qw "$TARGET"; then
+    echo "omarchy-set-epp: invalid EPP value '$TARGET'" >&2
+    echo "Valid values: $VALID_VALUES" >&2
+    exit 1
+fi
+
+EPP_GLOB="/sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference"
+
+# Check if EPP is supported on this system
+if ! ls $EPP_GLOB >/dev/null 2>&1; then
+    # Not an error — many systems don't expose EPP (e.g., AMD without epp driver)
+    echo "omarchy-set-epp: EPP sysfs not available on this CPU — skipping" >&2
+    exit 0
+fi
+
+# ── Per-core write with escalation chain ─────────────────────────────────────
+_write_epp() {
+    local file="$1"
+
+    # Read current value — skip if already at target (idempotent)
+    local current
+    current=$(cat "$file" 2>/dev/null) || return 0
+    if [[ "$current" == "$TARGET" ]]; then
+        return 0
+    fi
+
+    # 1. Unprivileged direct write
+    if [[ -w "$file" ]] && echo "$TARGET" > "$file" 2>/dev/null; then
+        return 0
+    fi
+
+    # 2. Passwordless sudo
+    if sudo -n bash -c "echo '$TARGET' > '$file'" 2>/dev/null; then
+        return 0
+    fi
+
+    # 3. run0 (systemd-run as root, no password prompt)
+    if command -v run0 >/dev/null 2>&1 && \
+       run0 bash -c "echo '$TARGET' > '$file'" 2>/dev/null; then
+        return 0
+    fi
+
+    # 4. pkexec (graphical policy-kit prompt as last resort)
+    if command -v pkexec >/dev/null 2>&1 && \
+       pkexec bash -c "echo '$TARGET' > '$file'" 2>/dev/null; then
+        return 0
+    fi
+
+    echo "omarchy-set-epp: failed to write '$TARGET' to $file" >&2
+    return 1
+}
+
+failed=0
+written=0
+for f in $EPP_GLOB; do
+    [[ -f "$f" ]] || continue
+    if _write_epp "$f"; then
+        (( written++ )) || true
+    else
+        (( failed++ )) || true
+    fi
+done
+
+if (( failed > 0 )); then
+    echo "omarchy-set-epp: $failed core(s) failed to update" >&2
+    exit 1
+fi
+
+echo "omarchy-set-epp: EPP set to '$TARGET' on $written core(s)"
