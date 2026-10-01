@@ -60,12 +60,12 @@ C_BG_HIGHLIGHT=$'\033[48;5;236m' # Selection background
 # Performance & Display Pre-allocations
 NL=$'\n'
 CLR_EOL=$'\033[K'
-SPACES="                                                                                                                                                                                                        "
+SPACES="                                                                                                                                                                                                                                                                "
 ANSI_RE=$'\x1b\\[[0-9;]*[a-zA-Z]'
-PROGRESS_FILLED="████████████████████████████████████████"
-PROGRESS_EMPTY="░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░"
-BOX_W=74
-INNER_W=72
+PROGRESS_FILLED="████████████████████████████████████████████████████████████████"
+PROGRESS_EMPTY="░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░"
+BOX_W=100
+INNER_W=98
 HLINE=""
 
 # Logger fallbacks for batch / non-TUI mode
@@ -287,6 +287,45 @@ declare -A MODULE_EXCLUSIVITIES=(
     ["omarchy_core"]="★ OMARCHY EXCLUSIVE (Core Shell & Themes)"
     ["powerprofiles"]="★ OMARCHY & LAPTOP HARDWARE EXCLUSIVE"
     ["antigravity"]="Omarchy AI Suite"
+)
+
+# Tier: 3=Omarchy Exclusive (★ purple), 2=Omarchy Optimised (◆ gold), 1=Universal (• gray)
+declare -A MODULE_TIER=(
+    ["prereqs"]=1
+    ["zsh"]=2
+    ["zsh_plugins"]=1
+    ["bash"]=1
+    ["ghostty"]=2
+    ["terminals"]=1
+    ["tmux"]=1
+    ["nvim"]=2
+    ["helix"]=2
+    ["git_tools"]=1
+    ["btop"]=2
+    ["hyprland"]=3
+    ["desktop_media"]=3
+    ["desktop_common"]=1
+    ["omarchy_core"]=3
+    ["powerprofiles"]=3
+    ["antigravity"]=2
+)
+
+# Flat ordered list for the grouped render view
+MODULE_GROUPS=(
+    "__GROUP__System Setup"
+    "prereqs"
+    "__GROUP__Shell Environment"
+    "zsh" "zsh_plugins" "bash"
+    "__GROUP__Terminals"
+    "ghostty" "terminals" "tmux"
+    "__GROUP__Editors"
+    "nvim" "helix"
+    "__GROUP__Developer Tools"
+    "git_tools" "btop"
+    "__GROUP__Wayland Desktop"
+    "hyprland" "desktop_media" "desktop_common"
+    "__GROUP__Omarchy Suite"
+    "omarchy_core" "powerprofiles" "antigravity"
 )
 
 declare -a DET_BENEFITS=()
@@ -677,9 +716,13 @@ update_terminal_size() {
         LINES="${LINES:-24}"
     fi
 
-    BOX_W=74
-    [ "$COLUMNS" -lt 76 ] && BOX_W=$((COLUMNS - 2))
-    [ "$BOX_W" -lt 50 ] && BOX_W=50
+    # Dynamic box: fill up to 108 cols (4 margin), default 100, minimum 80
+    local _target=$(( COLUMNS - 4 ))
+    [ "$_target" -gt 108 ] && _target=108
+    [ "$_target" -lt 100 ] && _target=100
+    [ "$COLUMNS" -lt 104 ] && _target=$(( COLUMNS - 4 ))
+    [ "$_target" -lt 80 ] && _target=80
+    BOX_W="$_target"
     INNER_W=$((BOX_W - 2))
 
     local sp="${SPACES:0:INNER_W}"
@@ -1321,11 +1364,15 @@ run_selection_tui() {
     local -a DESC_ROWS=()
     local -a DETAIL_CARD_TOP=()
     local -a DETAIL_CARD_BODY=()
+    local -a GROUP_RENDER_ROWS=()
+    local -a GROUP_RENDER_IDX=()
+    local PRESET_BAR_STATIC=""
     local HEADER_BUF=""
     local DIVIDER_ROW=""
     local BOTTOM_ROW=""
     local FOOTER_ROW=""
     local DETAIL_CARD_BOT=""
+    local HELP_SCREEN=""
 
     rebuild_selection_caches() {
         update_terminal_size
@@ -1333,7 +1380,8 @@ run_selection_tui() {
 
         local mode_badge="Symlink"
         [ "$MODE" = "copy" ] && mode_badge="Copy"
-        [ "$DRY_RUN" = true ] && mode_badge+=" (Dry-Run)"
+        local dry_tag=""
+        [ "$DRY_RUN" = true ] && mode_badge+=" (Dry-Run)" && dry_tag=" ${C_RED}[DRY-RUN]${RESET}"
 
         local suite_note="Arch / Omarchy Native Workspace Suite"
         if [ "$PKG_FAMILY" = "fedora" ]; then
@@ -1342,7 +1390,6 @@ run_selection_tui() {
             suite_note="Debian / Ubuntu Multi-Distro Suite"
         fi
 
-        # Right side info lines matching the 6 art lines
         local right_w=$((INNER_W - 19))
         [ "$right_w" -lt 10 ] && right_w=10
 
@@ -1352,14 +1399,13 @@ run_selection_tui() {
             "Deploy Mode  : ${mode_badge}"
             "Target User  : ${TARGET_DIR}"
             "Suite Note   : ${suite_note}"
-            "Controls     : [j/k] Move  [l/→] Details  [Space] Toggle"
+            "Controls     : [j/k] Move  [l] Details  [Space] Toggle  [?] Help"
         )
 
         HEADER_BUF=""
         HEADER_BUF+="$banner"
 
         if [ "$LINES" -ge 28 ]; then
-            # Full Distro Art + Info Box
             HEADER_BUF+="  ${C_DARK_GRAY}${B_TOP_L}${HLINE}${B_TOP_R}${RESET}${NL}"
             for ((r=0; r<6; r++)); do
                 local art_l="${DISTRO_ART[r]}"
@@ -1371,86 +1417,212 @@ run_selection_tui() {
             done
             HEADER_BUF+="  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
         else
-            # Compact header for small terminals
-            HEADER_BUF+="  ${C_ACCENT}OS:${RESET} ${DISTRO_NAME}  ${C_ACCENT}Pkg:${RESET} ${PKG_MGR}  ${C_ACCENT}Mode:${RESET} ${mode_badge}  ${C_ACCENT}Target:${RESET} ${TARGET_DIR}${NL}${NL}"
+            HEADER_BUF+="  ${C_ACCENT}OS:${RESET} ${DISTRO_NAME}  ${C_ACCENT}Pkg:${RESET} ${PKG_MGR}  ${C_ACCENT}Mode:${RESET} ${mode_badge}${dry_tag}  ${C_ACCENT}Target:${RESET} ${TARGET_DIR}${NL}${NL}"
             HEADER_BUF+="  ${C_DARK_GRAY}${B_TOP_L}${HLINE}${B_TOP_R}${RESET}${NL}"
         fi
 
-        # Preset Quick Bar inside box
-        local preset_pad=$((INNER_W - 57))
-        [ "$preset_pad" -lt 0 ] && preset_pad=0
-        HEADER_BUF+="  ${C_DARK_GRAY}${B_VERT}${RESET}  Presets: ${C_PRIMARY}[1]${RESET} Full  ${C_PRIMARY}[2]${RESET} CLI  ${C_PRIMARY}[3]${RESET} Desktop  ${C_PRIMARY}[a]${RESET} All  ${C_PRIMARY}[n]${RESET} None${SPACES:0:preset_pad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-        HEADER_BUF+="  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
+        # Preset static portion (count injected live per frame via placeholder)
+        PRESET_BAR_STATIC="  ${C_DARK_GRAY}${B_VERT}${RESET}  Presets: ${C_PRIMARY}[1]${RESET} Full  ${C_PRIMARY}[2]${RESET} CLI  ${C_PRIMARY}[3]${RESET} Desktop  ${C_PRIMARY}[a]${RESET} All  ${C_PRIMARY}[n]${RESET} None"
+        HEADER_BUF+="__PRESET_BAR__"
 
         DIVIDER_ROW="  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
         BOTTOM_ROW="  ${C_DARK_GRAY}${B_BOT_L}${HLINE}${B_BOT_R}${RESET}${NL}"
-        FOOTER_ROW="  ${C_PRIMARY}[j/k]${RESET} Move  ${C_PRIMARY}[l/→]${RESET} Details  ${C_PRIMARY}[Space]${RESET} Toggle  ${C_PRIMARY}[m]${RESET} Mode  ${C_PRIMARY}[d]${RESET} Dry-Run  ${C_GREEN}[Enter]${RESET} Proceed  ${C_RED}[q]${RESET} Quit${CLR_EOL}${NL}"
-        DETAIL_CARD_BOT="  ${C_PRIMARY}[Space]${RESET} Toggle  ${C_PRIMARY}[j/↓]${RESET} Next  ${C_PRIMARY}[k/↑]${RESET} Prev  ${C_PRIMARY}[h/←/q/Esc]${RESET} Back to List  ${C_GREEN}[Enter]${RESET} Back${CLR_EOL}${NL}"
+        FOOTER_ROW="  ${C_PRIMARY}[j/k]${RESET} Move  ${C_PRIMARY}[l/→]${RESET} Details  ${C_PRIMARY}[Space]${RESET} Toggle  ${C_PRIMARY}[m]${RESET} Mode  ${C_PRIMARY}[d]${RESET} Dry-Run  ${C_GREEN}[Enter]${RESET} Proceed  ${C_RED}[q]${RESET} Quit  ${C_GRAY}[?]${RESET} Help${CLR_EOL}${NL}"
+        DETAIL_CARD_BOT="  ${C_PRIMARY}[Space]${RESET} Toggle  ${C_PRIMARY}[j/↓]${RESET} Next  ${C_PRIMARY}[k/↑]${RESET} Prev  ${C_PRIMARY}[h/←/q/Esc]${RESET} Back  ${C_GREEN}[Enter]${RESET} Back${CLR_EOL}${NL}"
 
+        # ── Help overlay ───────────────────────────────────────────────────────
+        HELP_SCREEN=$'\033[H'"$banner"
+        HELP_SCREEN+="  ${C_DARK_GRAY}${B_TOP_L}${HLINE}${B_TOP_R}${RESET}${NL}"
+        local _hw=$((INNER_W - 18))
+        [ "$_hw" -lt 0 ] && _hw=0
+        HELP_SCREEN+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}KEYBOARD SHORTCUTS${RESET}${SPACES:0:$_hw}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+        HELP_SCREEN+="  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
+        local _hs_lines=(
+            "  ${C_ACCENT}${BOLD}Navigation${RESET}"
+            "   ${C_PRIMARY}j / ↓${RESET}            Move cursor down"
+            "   ${C_PRIMARY}k / ↑${RESET}            Move cursor up"
+            "   ${C_PRIMARY}PgDn / PgUp${RESET}    Jump one visible page"
+            "   ${C_PRIMARY}g / Home${RESET}        Jump to top  |  ${C_PRIMARY}G / End${RESET}  Jump to bottom"
+            ""
+            "  ${C_ACCENT}${BOLD}Selection${RESET}"
+            "   ${C_PRIMARY}Space${RESET}           Toggle current module on/off"
+            "   ${C_PRIMARY}1${RESET}               Preset: Full (all modules)"
+            "   ${C_PRIMARY}2${RESET}               Preset: CLI only"
+            "   ${C_PRIMARY}3${RESET}               Preset: Desktop only"
+            "   ${C_PRIMARY}a${RESET}               Select all  |  ${C_PRIMARY}n${RESET}  Deselect all"
+            ""
+            "  ${C_ACCENT}${BOLD}Feature Details${RESET}"
+            "   ${C_PRIMARY}l / → / i${RESET}         Open feature detail card"
+            "   ${C_PRIMARY}h / ← / Esc${RESET}       Close detail / back to list"
+            "   ${C_PRIMARY}j/k in detail${RESET}   Flip to next/prev module card"
+            "   ${C_PRIMARY}Space in detail${RESET}  Toggle that module on/off"
+            ""
+            "  ${C_ACCENT}${BOLD}Actions${RESET}"
+            "   ${C_PRIMARY}m${RESET}               Toggle deploy mode (Symlink ↔ Copy)"
+            "   ${C_PRIMARY}d${RESET}               Toggle dry-run mode on/off"
+            "   ${C_GREEN}Enter${RESET}           Proceed to confirmation & install"
+            "   ${C_RED}q / Esc${RESET}         Quit the installer"
+            "   ${C_GRAY}?${RESET}               Show this help screen"
+            ""
+            "  ${C_ACCENT}${BOLD}Tier Legend${RESET}"
+            "   ${C_ACCENT}★${RESET} Omarchy Exclusive   ${C_YELLOW}◆${RESET} Omarchy Optimised   ${C_GRAY}•${RESET} Universal / Cross-Distro"
+        )
+        for _hsl in "${_hs_lines[@]}"; do
+            local _hraw="$_hsl"
+            while [[ "$_hraw" =~ $ANSI_RE ]]; do _hraw="${_hraw//${BASH_REMATCH[0]}/}"; done
+            local _hp=$(( INNER_W - ${#_hraw} - 1 ))
+            [ "$_hp" -lt 0 ] && _hp=0
+            HELP_SCREEN+="  ${C_DARK_GRAY}${B_VERT}${RESET} ${_hsl}${SPACES:0:$_hp}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+        done
+        HELP_SCREEN+="  ${C_DARK_GRAY}${B_BOT_L}${HLINE}${B_BOT_R}${RESET}${NL}"
+        local _ak="  Press any key to return"
+        local _akp=$(( INNER_W - ${#_ak} ))
+        [ "$_akp" -lt 0 ] && _akp=0
+        HELP_SCREEN+="${C_GRAY}${ITALIC}${_ak}${RESET}${SPACES:0:$_akp}${NL}"
+        HELP_SCREEN+=$'\033[J'
+
+        # ── Group render index ─────────────────────────────────────────────────
+        GROUP_RENDER_ROWS=()
+        GROUP_RENDER_IDX=()
+        local _gmi=0
+        for _gitem in "${MODULE_GROUPS[@]}"; do
+            if [[ "$_gitem" == __GROUP__* ]]; then
+                local _gn="${_gitem#__GROUP__}"
+                local _gs="  ── ${_gn} ──"
+                local _gp=$(( INNER_W - ${#_gn} - 9 ))
+                [ "$_gp" -lt 0 ] && _gp=0
+                GROUP_RENDER_ROWS+=("  ${C_DARK_GRAY}${B_VERT}${RESET}${DIM}${C_DARK_GRAY}${_gs}${SPACES:0:$_gp}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}")
+                GROUP_RENDER_IDX+=(-1)
+            else
+                GROUP_RENDER_ROWS+=("__MOD__${_gmi}")
+                GROUP_RENDER_IDX+=("$_gmi")
+                _gmi=$(( _gmi + 1 ))
+            fi
+        done
+
+        # ── Per-module rows and detail cards ───────────────────────────────────
         for ((i = 0; i < num_keys; i++)); do
             local key="${MODULE_KEYS[i]}"
             local name="${MODULE_NAMES[$key]}"
             local tag="${MODULE_TAGS[$key]}"
-            local ilen=$(( ${#name} + ${#tag} + 10 ))
-            local pad=$((INNER_W - ilen))
+            local tier="${MODULE_TIER[$key]:-1}"
+
+            local tier_sym tier_col
+            case "$tier" in
+                3) tier_sym="★"; tier_col="${C_ACCENT}" ;;
+                2) tier_sym="◆"; tier_col="${C_YELLOW}" ;;
+                *) tier_sym="•"; tier_col="${C_DARK_GRAY}" ;;
+            esac
+
+            # visible width: "❯ [✔] <name>  <sym> [<tag>]"
+            # = 2+4+len(name)+2+1+1+1+len(tag)+1
+            local ilen=$(( 11 + ${#name} + ${#tag} + 1 ))
+            local pad=$(( INNER_W - ilen ))
             [ "$pad" -lt 0 ] && pad=0
 
-            ROW_SEL_ACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}${C_BG_HIGHLIGHT}${C_PRIMARY}❯ ${C_GREEN}[✔]${RESET}${C_BG_HIGHLIGHT} ${BOLD}${C_WHITE}${name}${RESET}${C_BG_HIGHLIGHT}  ${C_GRAY}[${tag}]${RESET}${C_BG_HIGHLIGHT}${SPACES:0:pad}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-            ROW_SEL_INACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}  ${C_GREEN}[✔]${RESET} ${C_WHITE}${name}${RESET}  ${C_GRAY}[${tag}]${RESET}${SPACES:0:pad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-            ROW_UNSEL_ACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}${C_BG_HIGHLIGHT}${C_PRIMARY}❯ ${C_GRAY}[ ]${RESET}${C_BG_HIGHLIGHT} ${BOLD}${C_WHITE}${name}${RESET}${C_BG_HIGHLIGHT}  ${C_GRAY}[${tag}]${RESET}${C_BG_HIGHLIGHT}${SPACES:0:pad}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-            ROW_UNSEL_INACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}  ${C_GRAY}[ ]${RESET} ${C_WHITE}${name}${RESET}  ${C_GRAY}[${tag}]${RESET}${SPACES:0:pad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            ROW_SEL_ACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}${C_BG_HIGHLIGHT}${C_PRIMARY}❯ ${C_GREEN}[✔]${RESET}${C_BG_HIGHLIGHT} ${BOLD}${C_WHITE}${name}${RESET}${C_BG_HIGHLIGHT}  ${tier_col}${tier_sym}${RESET}${C_BG_HIGHLIGHT} ${C_GRAY}[${tag}]${RESET}${C_BG_HIGHLIGHT}${SPACES:0:pad}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            ROW_UNSEL_ACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}${C_BG_HIGHLIGHT}${C_PRIMARY}❯ ${C_GRAY}[ ]${RESET}${C_BG_HIGHLIGHT} ${BOLD}${C_WHITE}${name}${RESET}${C_BG_HIGHLIGHT}  ${tier_col}${tier_sym}${RESET}${C_BG_HIGHLIGHT} ${C_GRAY}[${tag}]${RESET}${C_BG_HIGHLIGHT}${SPACES:0:pad}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            ROW_SEL_INACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}  ${C_GREEN}[✔]${RESET} ${C_WHITE}${name}${RESET}  ${tier_col}${tier_sym}${RESET} ${C_GRAY}[${tag}]${RESET}${SPACES:0:pad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            ROW_UNSEL_INACTIVE[i]="  ${C_DARK_GRAY}${B_VERT}  ${C_GRAY}[ ] ${name}${RESET}  ${tier_col}${tier_sym}${RESET} ${C_GRAY}[${tag}]${RESET}${SPACES:0:pad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
 
+            # Description row with right-aligned hint
             local cur_desc="${MODULE_DESCS[$key]}"
             local dlen=$(( 8 + ${#cur_desc} ))
-            local dpad=$((INNER_W - dlen))
-            [ "$dpad" -lt 0 ] && dpad=0
-            DESC_ROWS[i]="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_ACCENT}Info:${RESET} ${cur_desc}${SPACES:0:dpad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            local hint="[l → Details]"
+            local hint_vis=13
+            local hpad=$(( INNER_W - dlen - hint_vis ))
+            if [ "$hpad" -ge 1 ]; then
+                DESC_ROWS[i]="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_ACCENT}Info:${RESET} ${cur_desc}${SPACES:0:hpad}${C_DARK_GRAY}${hint}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            else
+                local dpad=$(( INNER_W - dlen ))
+                [ "$dpad" -lt 0 ] && dpad=0
+                DESC_ROWS[i]="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_ACCENT}Info:${RESET} ${cur_desc:0:$(( INNER_W - 8 ))}${SPACES:0:0}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            fi
 
-            # Precalculate Detail Card for this module
+            # Detail card
             get_module_info "$key"
             local excl_label="${MODULE_EXCLUSIVITIES[$key]}"
+            local excl_col="${C_GRAY}"
+            case "${MODULE_TIER[$key]:-1}" in 3) excl_col="${C_ACCENT}" ;; 2) excl_col="${C_YELLOW}" ;; esac
 
-            local title_left="  FEATURE DETAILS: ${BOLD}${C_WHITE}${name}${RESET}  ${C_GRAY}[${tag}]${RESET}"
-            local title_vis_len=$(( ${#name} + ${#tag} + 22 ))
-            local pad_badge=$((INNER_W - title_vis_len - 25))
-            [ "$pad_badge" -lt 0 ] && pad_badge=0
-            DETAIL_CARD_TOP[i]="  ${C_DARK_GRAY}${B_TOP_L}${HLINE}${B_TOP_R}${RESET}${NL}  ${C_DARK_GRAY}${B_VERT}${RESET}${title_left}${SPACES:0:pad_badge}"
+            local dtitle_vis=$(( 3 + ${#name} + 2 + 1 + ${#tag} + 1 ))
+            local excl_gap=$(( INNER_W - dtitle_vis - ${#excl_label} - 2 ))
+            [ "$excl_gap" -lt 1 ] && excl_gap=1
+            DETAIL_CARD_TOP[i]="  ${C_DARK_GRAY}${B_TOP_L}${HLINE}${B_TOP_R}${RESET}${NL}  ${C_DARK_GRAY}${B_VERT}${RESET}  ${tier_col}${tier_sym}${RESET}  ${BOLD}${C_WHITE}${name}${RESET}  ${C_GRAY}[${tag}]${RESET}${SPACES:0:excl_gap}${excl_col}${excl_label}${RESET} "
 
             local body=""
             body+="  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
-            local excl_line="  ${C_ACCENT}Exclusivity${RESET} : ${BOLD}${excl_label}${RESET}"
-            local pad_ex=$((INNER_W - ${#excl_label} - 16))
-            [ "$pad_ex" -lt 0 ] && pad_ex=0
-            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}${excl_line}${SPACES:0:pad_ex}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            body+="__DETAIL_STATUS_${i}__${NL}"
             body+="  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
 
-            local pad_h1=$((INNER_W - 41))
-            [ "$pad_h1" -lt 0 ] && pad_h1=0
-            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}WHAT INSTALLING THIS FEATURE GIVES YOU:${RESET}${SPACES:0:pad_h1}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            local ph1=$(( INNER_W - 41 ))
+            [ "$ph1" -lt 0 ] && ph1=0
+            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}WHAT INSTALLING THIS FEATURE GIVES YOU:${RESET}${SPACES:0:ph1}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
             for b in "${DET_BENEFITS[@]}"; do
-                local pad_b=$((INNER_W - ${#b} - 5))
-                [ "$pad_b" -lt 0 ] && pad_b=0
-                body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   • ${C_WHITE}${b:0:$((INNER_W - 5))}${RESET}${SPACES:0:pad_b}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                local bmax=$(( INNER_W - 7 ))
+                if [ "${#b}" -le "$bmax" ]; then
+                    local pb=$(( INNER_W - ${#b} - 5 ))
+                    [ "$pb" -lt 0 ] && pb=0
+                    body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   ${C_PRIMARY}•${RESET} ${C_WHITE}${b}${RESET}${SPACES:0:pb}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                else
+                    # word-wrap long benefit
+                    local _bt="$b" _f=1
+                    while [ "${#_bt}" -gt "$bmax" ]; do
+                        local _ch="${_bt:0:$bmax}"
+                        local _br="${_ch% *}"
+                        [ "${#_br}" -lt 10 ] && _br="$_ch"
+                        local _pb=$(( INNER_W - ${#_br} - 5 ))
+                        [ "$_pb" -lt 0 ] && _pb=0
+                        if [ "$_f" -eq 1 ]; then
+                            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   ${C_PRIMARY}•${RESET} ${C_WHITE}${_br}${RESET}${SPACES:0:$_pb}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                            _f=0
+                        else
+                            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}     ${C_WHITE}${_br}${RESET}${SPACES:0:$((_pb-2))}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                        fi
+                        _bt="${_bt#${_br}}"
+                        _bt="${_bt# }"
+                    done
+                    if [ -n "$_bt" ]; then
+                        local _pb2=$(( INNER_W - ${#_bt} - 5 ))
+                        [ "$_pb2" -lt 0 ] && _pb2=0
+                        if [ "$_f" -eq 1 ]; then
+                            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   ${C_PRIMARY}•${RESET} ${C_WHITE}${_bt}${RESET}${SPACES:0:$_pb2}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                        else
+                            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}     ${C_WHITE}${_bt}${RESET}${SPACES:0:$((_pb2-2))}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                        fi
+                    fi
+                fi
             done
 
             body+="  ${C_DARK_GRAY}${B_VERT}${RESET}${SPACES:0:INNER_W}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-            local pad_h2=$((INNER_W - 35))
-            [ "$pad_h2" -lt 0 ] && pad_h2=0
-            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}DEPLOYED CONFIGURATIONS & ASSETS:${RESET}${SPACES:0:pad_h2}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            local ph2=$(( INNER_W - 35 ))
+            [ "$ph2" -lt 0 ] && ph2=0
+            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}DEPLOYED CONFIGURATIONS & ASSETS:${RESET}${SPACES:0:ph2}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
             for a in "${DET_ASSETS[@]}"; do
-                local pad_a=$((INNER_W - ${#a} - 5))
-                [ "$pad_a" -lt 0 ] && pad_a=0
-                body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   • ${C_GRAY}${a:0:$((INNER_W - 5))}${RESET}${SPACES:0:pad_a}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                local pa=$(( INNER_W - ${#a} - 5 ))
+                [ "$pa" -lt 0 ] && pa=0
+                if [ "${#a}" -le $(( INNER_W - 5 )) ]; then
+                    body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   ${C_ACCENT}▸${RESET} ${C_GRAY}${a}${RESET}${SPACES:0:pa}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                else
+                    local _a1="${a:0:$(( INNER_W - 5 ))}"
+                    local _a2="${a:$(( INNER_W - 5 ))}"
+                    local _pa1=$(( INNER_W - ${#_a1} - 5 ))
+                    [ "$_pa1" -lt 0 ] && _pa1=0
+                    local _pa2=$(( INNER_W - ${#_a2} - 5 ))
+                    [ "$_pa2" -lt 0 ] && _pa2=0
+                    body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   ${C_ACCENT}▸${RESET} ${C_GRAY}${_a1}${RESET}${SPACES:0:$_pa1}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                    body+="  ${C_DARK_GRAY}${B_VERT}${RESET}     ${C_GRAY}${_a2}${RESET}${SPACES:0:$((_pa2+2))}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                fi
             done
 
             body+="  ${C_DARK_GRAY}${B_VERT}${RESET}${SPACES:0:INNER_W}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-            local pad_h3=$((INNER_W - 49))
-            [ "$pad_h3" -lt 0 ] && pad_h3=0
-            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}DISTRO COMPATIBILITY (Arch / Fedora / Debian):${RESET}${SPACES:0:pad_h3}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            local ph3=$(( INNER_W - 49 ))
+            [ "$ph3" -lt 0 ] && ph3=0
+            body+="  ${C_DARK_GRAY}${B_VERT}${RESET}  ${C_PRIMARY}${BOLD}DISTRO COMPATIBILITY (Arch / Fedora / Debian):${RESET}${SPACES:0:ph3}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
             for d in "${DET_DISTRO[@]}"; do
-                local pad_d=$((INNER_W - ${#d} - 5))
-                [ "$pad_d" -lt 0 ] && pad_d=0
-                body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   • ${d:0:$((INNER_W - 5))}${SPACES:0:pad_d}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+                local pd=$(( INNER_W - ${#d} - 5 ))
+                [ "$pd" -lt 0 ] && pd=0
+                body+="  ${C_DARK_GRAY}${B_VERT}${RESET}   ${C_ACCENT}◈${RESET} ${d:0:$(( INNER_W - 5 ))}${SPACES:0:pd}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
             done
 
             body+="  ${C_DARK_GRAY}${B_BOT_L}${HLINE}${B_BOT_R}${RESET}${NL}"
@@ -1462,14 +1634,26 @@ run_selection_tui() {
     render_detail_screen() {
         local cur_k="${MODULE_KEYS[cursor_idx]}"
         local is_sel="${SELECTED[$cur_k]}"
-        local badge="${C_GREEN}[✔] SELECTED / ENABLED${RESET}"
-        [ "$is_sel" -eq 0 ] && badge="${C_GRAY}[ ] UNSELECTED / DISABLED${RESET}"
+        local badge_str badge_vis
+        if [ "$is_sel" -eq 1 ]; then
+            badge_str="${C_GREEN}[â] SELECTED / ENABLED${RESET}"
+            badge_vis=22
+        else
+            badge_str="${C_GRAY}[ ] UNSELECTED / DISABLED${RESET}"
+            badge_vis=25
+        fi
+        local th="  [Space] Toggle  [j/k] Navigate"
+        local bp=$(( INNER_W - badge_vis - ${#th} - 1 ))
+        [ "$bp" -lt 0 ] && bp=0
+        local status_line="  ${C_DARK_GRAY}${B_VERT}${RESET} ${badge_str}${SPACES:0:bp}${C_DARK_GRAY}${th}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}"
+
+        local body_r="${DETAIL_CARD_BODY[cursor_idx]//__DETAIL_STATUS_${cursor_idx}__/${status_line}}"
 
         local buf=$'\033[H'
         buf+="$banner"
         buf+="${DETAIL_CARD_TOP[cursor_idx]}"
-        buf+="${badge} ${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
-        buf+="${DETAIL_CARD_BODY[cursor_idx]}"
+        buf+="${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+        buf+="${body_r}"
         buf+="${DETAIL_CARD_BOT}"
         buf+=$'\033[J'
         printf "%s" "$buf"
@@ -1511,49 +1695,74 @@ run_selection_tui() {
             continue
         fi
 
+        # Live selected count (17 iterations — trivial)
+        local sel_count=0
+        for _sc in "${MODULE_KEYS[@]}"; do
+            [ "${SELECTED[$_sc]}" -eq 1 ] && sel_count=$(( sel_count + 1 ))
+        done
+
+        # Build live preset bar with count injected right-aligned
+        local _cstr="  â ${sel_count}/${num_keys} selected  "
+        local _cvis=$(( 5 + ${#sel_count} + 1 + ${#num_keys} + 10 ))
+        local _pbpad=$(( INNER_W - 61 - _cvis ))
+        [ "$_pbpad" -lt 0 ] && _pbpad=0
+        local _pbl="${PRESET_BAR_STATIC}${SPACES:0:$_pbpad}${C_GREEN}${_cstr}${RESET}${C_DARK_GRAY}${B_VERT}${RESET}${NL}  ${C_DARK_GRAY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
+        local header_resolved="${HEADER_BUF//__PRESET_BAR__/${_pbl}}"
+
         local header_lines=17
         [ "$LINES" -ge 28 ] && header_lines=24
-        local max_visible=$((LINES - header_lines))
+        local render_len="${#GROUP_RENDER_ROWS[@]}"
+        local max_visible=$(( LINES - header_lines - 4 ))
         [ "$max_visible" -lt 6 ] && max_visible=6
-        [ "$max_visible" -gt "$num_keys" ] && max_visible="$num_keys"
+        [ "$max_visible" -gt "$render_len" ] && max_visible="$render_len"
 
-        # Adjust scrolling window
-        if [ "$cursor_idx" -lt "$scroll_offset" ]; then
-            scroll_offset="$cursor_idx"
-        elif [ "$cursor_idx" -ge $((scroll_offset + max_visible)) ]; then
-            scroll_offset=$((cursor_idx - max_visible + 1))
+        # Map cursor_idx → render row index
+        local cursor_ri=0
+        for ((_ri=0; _ri<render_len; _ri++)); do
+            [[ "${GROUP_RENDER_IDX[$_ri]}" == "$cursor_idx" ]] && { cursor_ri=$_ri; break; }
+        done
+
+        # Scroll window based on render index
+        if [ "$cursor_ri" -lt "$scroll_offset" ]; then
+            scroll_offset="$cursor_ri"
+        elif [ "$cursor_ri" -ge $(( scroll_offset + max_visible )) ]; then
+            scroll_offset=$(( cursor_ri - max_visible + 1 ))
         fi
 
-        # Build entire frame in memory with precalculated rows
-        local buf=$'\033[H'"$HEADER_BUF"
+        local buf=$'\033[H'"${header_resolved}"
+
+        local end_ri=$(( scroll_offset + max_visible ))
+        [ "$end_ri" -gt "$render_len" ] && end_ri="$render_len"
 
         # Scroll indicator top
         if [ "$scroll_offset" -gt 0 ]; then
-            local scroll_up="          ▲  $scroll_offset more components above  ▲"
-            local spad=$((INNER_W - ${#scroll_up}))
-            [ "$spad" -lt 0 ] && spad=0
-            buf+="  ${C_DARK_GRAY}${B_VERT}${C_GRAY}${scroll_up}${SPACES:0:spad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+            local _su="  â²  ${scroll_offset} more above  â²"
+            local _sp=$(( INNER_W - ${#_su} ))
+            [ "$_sp" -lt 0 ] && _sp=0
+            buf+="  ${C_DARK_GRAY}${B_VERT}${C_GRAY}${_su}${SPACES:0:$_sp}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
         fi
 
-        local end_idx=$((scroll_offset + max_visible))
-        [ "$end_idx" -gt "$num_keys" ] && end_idx="$num_keys"
-
-        for ((i = scroll_offset; i < end_idx; i++)); do
-            local key="${MODULE_KEYS[i]}"
-            if [ "$i" -eq "$cursor_idx" ]; then
-                [ "${SELECTED[$key]}" -eq 1 ] && buf+="${ROW_SEL_ACTIVE[i]}" || buf+="${ROW_UNSEL_ACTIVE[i]}"
+        for ((_ri = scroll_offset; _ri < end_ri; _ri++)); do
+            local _ridx="${GROUP_RENDER_IDX[$_ri]}"
+            if [[ "$_ridx" == "-1" ]]; then
+                buf+="${GROUP_RENDER_ROWS[$_ri]}"
             else
-                [ "${SELECTED[$key]}" -eq 1 ] && buf+="${ROW_SEL_INACTIVE[i]}" || buf+="${ROW_UNSEL_INACTIVE[i]}"
+                local _rkey="${MODULE_KEYS[$_ridx]}"
+                if [[ "$_ridx" == "$cursor_idx" ]]; then
+                    [ "${SELECTED[$_rkey]}" -eq 1 ] && buf+="${ROW_SEL_ACTIVE[$_ridx]}" || buf+="${ROW_UNSEL_ACTIVE[$_ridx]}"
+                else
+                    [ "${SELECTED[$_rkey]}" -eq 1 ] && buf+="${ROW_SEL_INACTIVE[$_ridx]}" || buf+="${ROW_UNSEL_INACTIVE[$_ridx]}"
+                fi
             fi
         done
 
         # Scroll indicator bottom
-        if [ "$end_idx" -lt "$num_keys" ]; then
-            local rem=$((num_keys - end_idx))
-            local scroll_dn="          ▼  $rem more components below  ▼"
-            local spad=$((INNER_W - ${#scroll_dn}))
-            [ "$spad" -lt 0 ] && spad=0
-            buf+="  ${C_DARK_GRAY}${B_VERT}${C_GRAY}${scroll_dn}${SPACES:0:spad}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
+        if [ "$end_ri" -lt "$render_len" ]; then
+            local _rem=$(( render_len - end_ri ))
+            local _sd="  â¼  ${_rem} more below  â¼"
+            local _sp=$(( INNER_W - ${#_sd} ))
+            [ "$_sp" -lt 0 ] && _sp=0
+            buf+="  ${C_DARK_GRAY}${B_VERT}${C_GRAY}${_sd}${SPACES:0:$_sp}${C_DARK_GRAY}${B_VERT}${RESET}${NL}"
         fi
 
         buf+="$DIVIDER_ROW"
@@ -1680,6 +1889,10 @@ run_selection_tui() {
                 echo -e "\n${C_YELLOW}Installation cancelled by user.${RESET}"
                 exit 0
                 ;;
+            "?"|"/")
+                printf "%s" "$HELP_SCREEN"
+                read_key
+                ;;
         esac
     done
 }
@@ -1785,7 +1998,7 @@ render_installer_frame() {
     buf+="  ${C_PRIMARY}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
 
     # Progress Bar (pre-sliced strings, 0 forks)
-    local bar_len=30
+    local bar_len=48
     local filled=$((percent * bar_len / 100))
     local empty=$((bar_len - filled))
     local bar_str="${PROGRESS_FILLED:0:filled}${PROGRESS_EMPTY:0:empty}"
@@ -1911,7 +2124,7 @@ run_completion_screen() {
     buf+=$'\033[H'
     buf+="${NL}  ${C_GREEN}${B_TOP_L}${HLINE}${B_TOP_R}${RESET}${NL}"
 
-    pad_string "      🎉  OMARCHIT INSTALLED SUCCESSFULLY! (The Sanjith Way)  🎉      " "$INNER_W"
+    pad_string "  🎉   OMARCHIT — THE SANJITH WAY — INSTALLED SUCCESSFULLY!   🎉" "$INNER_W"
     buf+="  ${C_GREEN}${B_VERT}${BOLD}${C_GREEN}${PAD_RESULT}${RESET}${C_GREEN}${B_VERT}${RESET}${NL}"
     buf+="  ${C_GREEN}${B_DIV_L}${HLINE}${B_DIV_R}${RESET}${NL}"
 
