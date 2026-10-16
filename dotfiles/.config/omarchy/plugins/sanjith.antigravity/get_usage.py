@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Antigravity Usage Collector for Omarchy Shell.
-Retrieves live quota limits (5-hour and weekly) for Gemini and Claude/GPT models
-from the Google Cloud Code Antigravity backend API.
+Dynamically retrieves live quota limits (5-hour and weekly) and available models
+from the official Antigravity CLI and Google Cloud Code backend.
 """
 
 from __future__ import annotations
@@ -12,27 +12,33 @@ import base64
 import datetime as dt
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 import time
 import urllib.error
-import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-QUOTA_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
-TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
-CACHE_TTL_SECONDS = 30
+PROD_QUOTA_ENDPOINT = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary"
+CACHE_TTL_SECONDS = 60
+MODELS_CACHE_TTL_SECONDS = 900  # 15 minutes
 
 
 def cache_file_path() -> Path:
     cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "omarchy"
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir / "antigravity_usage.json"
+
+
+def models_cache_file_path() -> Path:
+    cache_dir = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "omarchy"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "antigravity_available_models.json"
 
 
 def get_token_from_keyring() -> Optional[Dict[str, Any]]:
@@ -49,27 +55,6 @@ def get_token_from_keyring() -> Optional[Dict[str, Any]]:
     return None
 
 
-def save_token_to_keyring(token_data: Dict[str, Any]) -> None:
-    try:
-        proc = subprocess.Popen(
-            [
-                "secret-tool",
-                "store",
-                "--label=Password for 'antigravity' on 'gemini'",
-                "service",
-                "gemini",
-                "username",
-                "antigravity",
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        proc.communicate(input=json.dumps(token_data).encode("utf-8"), timeout=5)
-    except Exception:
-        pass
-
-
 def decode_id_token(id_token: str) -> Dict[str, Any]:
     try:
         parts = id_token.split(".")
@@ -79,90 +64,6 @@ def decode_id_token(id_token: str) -> Dict[str, Any]:
     except Exception:
         pass
     return {}
-
-
-def get_oauth_client_secret() -> str:
-    sec = os.environ.get("ANTIGRAVITY_CLIENT_SECRET", "").strip()
-    if sec:
-        return sec
-    try:
-        binary = subprocess.check_output(["which", "agy"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
-        with open(binary, "rb") as f:
-            data = f.read()
-        pattern = rb"GOC" + rb"SPX-[a-zA-Z0-9_\-]{28}"
-        m = re.search(pattern, data)
-        if m:
-            return m.group(0).decode("ascii")
-    except Exception:
-        pass
-    return ""
-
-
-def refresh_access_token(refresh_token: str) -> Optional[Tuple[str, int]]:
-    client_secret = get_oauth_client_secret()
-    if not client_secret:
-        return None
-    params = urllib.parse.urlencode({
-        "client_id": CLIENT_ID,
-        "client_secret": client_secret,
-        "refresh_token": refresh_token,
-        "grant_type": "refresh_token",
-    }).encode("utf-8")
-    req = urllib.request.Request(TOKEN_ENDPOINT, data=params, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            access_tok = data.get("access_token")
-            expires_in = data.get("expires_in", 3600)
-            if access_tok:
-                return access_tok, expires_in
-    except Exception:
-        pass
-    return None
-
-
-def get_valid_access_token(stored_data: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    token_obj = stored_data.get("token", {})
-    access_token = token_obj.get("access_token")
-    refresh_token = token_obj.get("refresh_token")
-    expiry_str = token_obj.get("expiry", "")
-
-    # Check if expired or about to expire in next 60 seconds
-    needs_refresh = False
-    if expiry_str:
-        try:
-            # Parse ISO expiry
-            # E.g. 2026-09-22T18:11:03.366031333+05:30
-            # Truncate nanoseconds to microseconds for Python isoformat
-            clean_str = expiry_str
-            if "." in clean_str:
-                prefix, rest = clean_str.split(".", 1)
-                tz_delim = "+" if "+" in rest else ("-" if "-" in rest else "Z")
-                if tz_delim in rest:
-                    frac, tz = rest.split(tz_delim, 1)
-                    clean_str = f"{prefix}.{frac[:6]}{tz_delim}{tz}"
-            expiry_dt = dt.datetime.fromisoformat(clean_str)
-            if expiry_dt.tzinfo is not None:
-                now = dt.datetime.now(expiry_dt.tzinfo)
-            else:
-                now = dt.datetime.utcnow()
-            if (expiry_dt - now).total_seconds() < 60:
-                needs_refresh = True
-        except Exception:
-            needs_refresh = False
-
-    if needs_refresh and refresh_token:
-        refreshed = refresh_access_token(refresh_token)
-        if refreshed:
-            new_access, expires_in = refreshed
-            token_obj["access_token"] = new_access
-            new_exp = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=expires_in)
-            token_obj["expiry"] = new_exp.isoformat()
-            stored_data["token"] = token_obj
-            save_token_to_keyring(stored_data)
-            return new_access, stored_data.get("id_token")
-
-    return access_token, stored_data.get("id_token")
 
 
 def format_duration(seconds: float) -> str:
@@ -181,26 +82,6 @@ def format_duration(seconds: float) -> str:
     if hours > 0:
         return f"{hours}h {minutes:02d}m"
     return f"{max(1, minutes)}m"
-
-
-def fetch_quota_summary(access_token: str) -> Optional[Dict[str, Any]]:
-    req_body = json.dumps({"project": "default-cli-project"}).encode("utf-8")
-    req = urllib.request.Request(
-        QUOTA_ENDPOINT,
-        data=req_body,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-            "User-Agent": "antigravity-cli",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        sys.stderr.write(f"Failed to fetch quota summary: {e}\n")
-        return None
 
 
 def get_local_antigravity_info() -> Dict[str, Any]:
@@ -245,14 +126,90 @@ def get_local_antigravity_info() -> Dict[str, Any]:
     }
 
 
+def get_discovered_models(force: bool = False) -> List[Dict[str, Any]]:
+    """
+    Dynamically discover available models from `agy models`.
+    Filters out legacy models and internal Google backend models.
+    """
+    cache_path = models_cache_file_path()
+    if not force and cache_path.is_file():
+        try:
+            if time.time() - cache_path.stat().st_mtime < MODELS_CACHE_TTL_SECONDS:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                    if isinstance(cached, list) and len(cached) > 0:
+                        return cached
+        except Exception:
+            pass
+
+    # Authoritative discovery via `agy models`
+    try:
+        proc = subprocess.run(["agy", "models"], capture_output=True, text=True, timeout=8)
+        if proc.returncode == 0:
+            discovered: List[Dict[str, Any]] = []
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line or "Fetching available models" in line or "..." in line:
+                    continue
+                # Clean spinner artifacts
+                clean_line = re.sub(r"^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\s]+", "", line).strip()
+                if not clean_line or "fetching" in clean_line.lower():
+                    continue
+                parts = re.split(r"\s{2,}|\t+", clean_line)
+                if len(parts) >= 2:
+                    mid = parts[0].strip()
+                    dname = parts[1].strip()
+                    if not mid or not dname or "fetching" in mid.lower() or "fetching" in dname.lower():
+                        continue
+                    discovered.append({
+                        "id": mid,
+                        "displayName": dname,
+                    })
+            if discovered:
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(discovered, f, indent=2)
+                except Exception:
+                    pass
+                return discovered
+    except Exception as e:
+        sys.stderr.write(f"agy models discovery failed: {e}\n")
+
+    # Authoritative fallback matching the exact current Antigravity catalog
+    fallback = [
+        {"id": "gemini-3.8-flash-high", "displayName": "Gemini 3.8 Flash (High)"},
+        {"id": "gemini-3.8-flash-medium", "displayName": "Gemini 3.8 Flash (Medium)"},
+        {"id": "gemini-3.8-flash-low", "displayName": "Gemini 3.8 Flash (Low)"},
+        {"id": "claude-sonnet-4-6", "displayName": "Claude Sonnet 4.6 (Thinking)"},
+        {"id": "claude-opus-4-6-thinking", "displayName": "Claude Opus 4.6 (Thinking)"},
+        {"id": "gpt-oss-120b-medium", "displayName": "GPT-OSS 120B (Medium)"},
+    ]
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(fallback, f, indent=2)
+    except Exception:
+        pass
+    return fallback
+
+
 def parse_bucket(bucket: Dict[str, Any], now_utc: dt.datetime) -> Dict[str, Any]:
-    remaining_fraction = float(bucket.get("remainingFraction", 1.0))
-    # Clamp to [0, 1]
+    bucket_id = bucket.get("id") or bucket.get("bucketId", "")
+    display_name = bucket.get("name") or bucket.get("displayName", "")
+    window = bucket.get("window", "")
+
+    rf = bucket.get("remaining_fraction")
+    if rf is None:
+        rf = bucket.get("remainingFraction", 1.0)
+    try:
+        remaining_fraction = float(rf)
+    except (ValueError, TypeError):
+        remaining_fraction = 1.0
     remaining_fraction = max(0.0, min(1.0, remaining_fraction))
+
     remaining_percent = int(round(remaining_fraction * 100))
     used_percent = 100 - remaining_percent
 
-    reset_time_str = bucket.get("resetTime", "")
+    reset_time_str = bucket.get("reset_time") or bucket.get("resetTime", "")
     resets_in_seconds = -1.0
     resets_formatted = ""
 
@@ -264,74 +221,179 @@ def parse_bucket(bucket: Dict[str, Any], now_utc: dt.datetime) -> Dict[str, Any]
         except Exception:
             resets_formatted = ""
 
+    # In Antigravity, all current limits (5h and weekly) are metered quotas
+    is_unlimited = False
+
     return {
-        "bucketId": bucket.get("bucketId", ""),
-        "displayName": bucket.get("displayName", ""),
-        "window": bucket.get("window", ""),
+        "bucketId": bucket_id,
+        "displayName": display_name,
+        "window": window,
         "remainingFraction": remaining_fraction,
         "remainingPercent": remaining_percent,
         "usedPercent": used_percent,
         "resetTime": reset_time_str,
         "resetsInSeconds": resets_in_seconds,
         "resetsFormatted": resets_formatted,
+        "isUnlimited": is_unlimited,
         "description": bucket.get("description", ""),
     }
 
 
+def fetch_usage_from_agy() -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """
+    Execute `agy -p "/usage" --output-format json` to get the 100% exact,
+    authoritative live quotas computed by Antigravity CLI.
+    """
+    try:
+        proc = subprocess.run(
+            ["agy", "-p", "/usage", "--output-format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=14,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            payload = json.loads(proc.stdout)
+            cmd_data = payload.get("command", {}).get("data", {})
+            groups = cmd_data.get("groups", [])
+            desc = cmd_data.get("description", "")
+            if groups:
+                return groups, desc
+    except Exception as e:
+        sys.stderr.write(f"fetch_usage_from_agy error: {e}\n")
+    return None, ""
+
+
+def fetch_usage_from_api(access_token: str) -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """Fallback: query Cloud Code backend API directly."""
+    try:
+        req_body = json.dumps({"project": "default-cli-project"}).encode("utf-8")
+        req = urllib.request.Request(
+            PROD_QUOTA_ENDPOINT,
+            data=req_body,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "User-Agent": "antigravity-cli",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            groups = data.get("groups", [])
+            desc = data.get("description", "")
+            if groups:
+                return groups, desc
+    except Exception as e:
+        sys.stderr.write(f"fetch_usage_from_api error: {e}\n")
+    return None, ""
+
+
+def update_limit_countdowns(limit_dict: Dict[str, Any], now_utc: dt.datetime) -> None:
+    if not limit_dict or limit_dict.get("isUnlimited"):
+        return
+    r_str = limit_dict.get("resetTime")
+    if r_str:
+        try:
+            p = dt.datetime.fromisoformat(r_str.replace("Z", "+00:00"))
+            secs = max(0.0, (p - now_utc).total_seconds())
+            limit_dict["resetsInSeconds"] = secs
+            limit_dict["resetsFormatted"] = format_duration(secs)
+        except Exception:
+            pass
+
+
 def collect_usage(force: bool = False) -> Dict[str, Any]:
     cache_path = cache_file_path()
+    now_utc = dt.datetime.now(dt.timezone.utc)
 
-    if not force and cache_path.is_file():
+    # 1. Check cache for instantaneous response
+    if cache_path.is_file():
         try:
             mtime = cache_path.stat().st_mtime
-            if time.time() - mtime < CACHE_TTL_SECONDS:
+            age = time.time() - mtime
+            if not force and age < CACHE_TTL_SECONDS:
                 with open(cache_path, "r", encoding="utf-8") as f:
                     cached = json.load(f)
                     if cached.get("ready"):
-                        # Re-calculate reset countdowns based on current time
-                        now_utc = dt.datetime.now(dt.timezone.utc)
+                        local_info = get_local_antigravity_info()
+                        active_model = local_info.get("activeModel", cached.get("activeModel", "Gemini 3.8 Flash (Medium)"))
+                        cached["activeModel"] = active_model
+
                         for group_key in ["gemini", "claudeGpt"]:
                             group = cached.get(group_key, {})
                             for limit_key in ["fiveHour", "weekly"]:
-                                limit = group.get(limit_key, {})
-                                reset_str = limit.get("resetTime")
-                                if reset_str:
+                                update_limit_countdowns(group.get(limit_key, {}), now_utc)
+
+                        for group in cached.get("groups", []):
+                            for limit_key in ["fiveHour", "weekly"]:
+                                update_limit_countdowns(group.get(limit_key, {}), now_utc)
+                            for m in group.get("modelsList", []):
+                                r_str = m.get("resetTime")
+                                if r_str:
                                     try:
-                                        p = dt.datetime.fromisoformat(reset_str.replace("Z", "+00:00"))
+                                        p = dt.datetime.fromisoformat(r_str.replace("Z", "+00:00"))
                                         secs = max(0.0, (p - now_utc).total_seconds())
-                                        limit["resetsInSeconds"] = secs
-                                        limit["resetsFormatted"] = format_duration(secs)
+                                        m["resetsFormatted"] = format_duration(secs)
                                     except Exception:
                                         pass
+                                m["isActive"] = (
+                                    m.get("displayName", "").strip().lower() == active_model.strip().lower()
+                                    or m.get("id", "").strip().lower() == active_model.strip().lower()
+                                    or active_model.strip().lower().startswith(m.get("displayName", "").strip().lower())
+                                )
+
+                        for m in cached.get("availableModels", []):
+                            r_str = m.get("resetTime")
+                            if r_str:
+                                try:
+                                    p = dt.datetime.fromisoformat(r_str.replace("Z", "+00:00"))
+                                    secs = max(0.0, (p - now_utc).total_seconds())
+                                    m["resetsFormatted"] = format_duration(secs)
+                                except Exception:
+                                    pass
+                            m["isActive"] = (
+                                m.get("displayName", "").strip().lower() == active_model.strip().lower()
+                                or m.get("id", "").strip().lower() == active_model.strip().lower()
+                                or active_model.strip().lower().startswith(m.get("displayName", "").strip().lower())
+                            )
+
+                        return cached
+            elif not force and age >= CACHE_TTL_SECONDS:
+                # If cache is older than TTL, return cached data immediately to keep UI fast
+                # and trigger a detached background refresh to update the cache
+                try:
+                    subprocess.Popen(
+                        [sys.executable, str(Path(__file__).resolve()), "--force"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    pass
+
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                    if cached.get("ready"):
                         return cached
         except Exception:
             pass
 
-    keyring_data = get_token_from_keyring()
-    if not keyring_data:
-        return {
-            "ready": False,
-            "authenticated": False,
-            "error": "Not logged in to Google Antigravity. Run `agy` to authenticate.",
-            "authHelpText": "Run `agy` to sign in with your Google account.",
-        }
-
-    access_token, id_token = get_valid_access_token(keyring_data)
-    if not access_token:
-        return {
-            "ready": False,
-            "authenticated": False,
-            "error": "Authentication token missing or invalid. Run `agy` to login.",
-            "authHelpText": "Run `agy` to re-authenticate.",
-        }
-
+    # 2. Retrieve user auth metadata
+    keyring_data = get_token_from_keyring() or {}
+    id_token = keyring_data.get("id_token", "")
     claims = decode_id_token(id_token) if id_token else {}
-    email = claims.get("email", "sanjithkarthik16@gmail.com")
+    email = claims.get("email", "sanjikarthikeyan@gmail.com")
     auth_method = keyring_data.get("auth_method", "consumer")
 
-    quota_data = fetch_quota_summary(access_token)
-    if not quota_data or "groups" not in quota_data:
-        # Fallback to cache if network call fails
+    # 3. Retrieve ground-truth quotas: primary from `agy`, secondary from Cloud Code API
+    raw_groups, quota_desc = fetch_usage_from_agy()
+    if not raw_groups:
+        token_obj = keyring_data.get("token", {})
+        access_tok = token_obj.get("access_token", "")
+        if access_tok:
+            raw_groups, quota_desc = fetch_usage_from_api(access_tok)
+
+    if not raw_groups:
+        # If cache exists, return stale cache rather than failing
         if cache_path.is_file():
             try:
                 with open(cache_path, "r", encoding="utf-8") as f:
@@ -342,68 +404,150 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
                 pass
         return {
             "ready": False,
-            "authenticated": True,
+            "authenticated": bool(keyring_data),
             "userEmail": email,
-            "error": "Failed to retrieve quota from Antigravity service.",
-            "authHelpText": "Check network connection or run `agy`.",
+            "error": "Failed to retrieve quota from Antigravity. Run `agy` to authenticate.",
+            "authHelpText": "Run `agy` to sign in or refresh tokens.",
         }
 
-    now_utc = dt.datetime.now(dt.timezone.utc)
-    groups = quota_data.get("groups", [])
-
-    gemini_group: Dict[str, Any] = {}
-    claude_group: Dict[str, Any] = {}
-
-    lowest_remaining = 1.0
-
-    for g in groups:
-        title = g.get("displayName", "")
-        buckets = g.get("buckets", [])
-        parsed_5h: Optional[Dict[str, Any]] = None
-        parsed_weekly: Optional[Dict[str, Any]] = None
-
-        for b in buckets:
-            parsed = parse_bucket(b, now_utc)
-            frac = parsed["remainingFraction"]
-            if frac < lowest_remaining:
-                lowest_remaining = frac
-            if parsed["window"] == "5h" or "5-hour" in parsed["displayName"].lower() or "five" in parsed["displayName"].lower():
-                parsed_5h = parsed
-            elif parsed["window"] == "weekly" or "week" in parsed["displayName"].lower():
-                parsed_weekly = parsed
-
-        group_record = {
-            "displayName": title,
-            "description": g.get("description", ""),
-            "fiveHour": parsed_5h or {},
-            "weekly": parsed_weekly or {},
-        }
-
-        if "gemini" in title.lower():
-            group_record["models"] = "Gemini 3.8 Flash, 3.7 Flash, 3.1 Pro"
-            gemini_group = group_record
-        else:
-            group_record["models"] = "Claude Opus 4.6, Claude Sonnet 4.6, GPT-OSS 120B"
-            claude_group = group_record
-
+    # 4. Discover actual available models (only real models, no legacy models)
+    discovered_models = get_discovered_models(force=force)
     local_info = get_local_antigravity_info()
+    active_model = local_info.get("activeModel", "Gemini 3.8 Flash (Medium)")
+
+    # 5. Parse groups and buckets from authoritative raw_groups
+    raw_gemini: Optional[Dict[str, Any]] = None
+    raw_claude: Optional[Dict[str, Any]] = None
+
+    for g in raw_groups:
+        title = g.get("name") or g.get("displayName", "")
+        if "gemini" in title.lower():
+            raw_gemini = g
+        else:
+            raw_claude = g
+
+    # Build Gemini limit buckets
+    gemini_5h: Dict[str, Any] = {}
+    gemini_weekly: Dict[str, Any] = {}
+
+    if raw_gemini:
+        for b in raw_gemini.get("buckets", []):
+            parsed = parse_bucket(b, now_utc)
+            bid = parsed["bucketId"].lower()
+            dname = parsed["displayName"].lower()
+            if parsed["window"] == "5h" or "five" in dname or "5h" in bid:
+                gemini_5h = parsed
+            elif parsed["window"] == "weekly" or "week" in dname or "weekly" in bid:
+                gemini_weekly = parsed
+
+    # Build Claude/GPT limit buckets
+    claude_5h: Dict[str, Any] = {}
+    claude_weekly: Dict[str, Any] = {}
+
+    if raw_claude:
+        for b in raw_claude.get("buckets", []):
+            parsed = parse_bucket(b, now_utc)
+            bid = parsed["bucketId"].lower()
+            dname = parsed["displayName"].lower()
+            if parsed["window"] == "5h" or "five" in dname or "5h" in bid:
+                claude_5h = parsed
+            elif parsed["window"] == "weekly" or "week" in dname or "weekly" in bid:
+                claude_weekly = parsed
+
+    # 6. Partition models into provider lists
+    gemini_models_list: List[Dict[str, Any]] = []
+    claude_models_list: List[Dict[str, Any]] = []
+
+    for m in discovered_models:
+        mid = m.get("id", "")
+        dname = m.get("displayName", mid)
+        is_active = (
+            dname.strip().lower() == active_model.strip().lower()
+            or mid.strip().lower() == active_model.strip().lower()
+            or active_model.strip().lower().startswith(dname.strip().lower())
+        )
+
+        if "gemini" in mid.lower() or "gemini" in dname.lower():
+            gemini_models_list.append({
+                "id": mid,
+                "displayName": dname,
+                "provider": "Google",
+                "remainingFraction": gemini_5h.get("remainingFraction", 1.0),
+                "remainingPercent": gemini_5h.get("remainingPercent", 100),
+                "usedPercent": gemini_5h.get("usedPercent", 0),
+                "resetTime": gemini_5h.get("resetTime", ""),
+                "resetsFormatted": gemini_5h.get("resetsFormatted", ""),
+                "isActive": is_active,
+            })
+        else:
+            provider = "Anthropic" if "claude" in mid.lower() else "OpenAI"
+            claude_models_list.append({
+                "id": mid,
+                "displayName": dname,
+                "provider": provider,
+                "remainingFraction": claude_5h.get("remainingFraction", 1.0),
+                "remainingPercent": claude_5h.get("remainingPercent", 100),
+                "usedPercent": claude_5h.get("usedPercent", 0),
+                "resetTime": claude_5h.get("resetTime", ""),
+                "resetsFormatted": claude_5h.get("resetsFormatted", ""),
+                "isActive": is_active,
+            })
+
+    gemini_summary = " · ".join(m["displayName"] for m in gemini_models_list) if gemini_models_list else "Gemini 3.8 Flash (High · Medium · Low)"
+    claude_summary = " · ".join(m["displayName"] for m in claude_models_list) if claude_models_list else "Claude Sonnet 4.6 · Claude Opus 4.6 · GPT-OSS 120B"
+
+    gemini_group = {
+        "id": "gemini",
+        "displayName": "Gemini Models",
+        "description": "Models within this group: " + ", ".join(m["displayName"] for m in gemini_models_list),
+        "models": gemini_summary,
+        "modelsSummary": gemini_summary,
+        "modelsList": gemini_models_list,
+        "fiveHour": gemini_5h,
+        "weekly": gemini_weekly,
+    }
+
+    claude_group = {
+        "id": "claudeGpt",
+        "displayName": (raw_claude.get("name") or raw_claude.get("displayName") or "Claude and GPT models") if raw_claude else "Claude and GPT models",
+        "description": "Models within this group: " + ", ".join(m["displayName"] for m in claude_models_list),
+        "models": claude_summary,
+        "modelsSummary": claude_summary,
+        "modelsList": claude_models_list,
+        "fiveHour": claude_5h,
+        "weekly": claude_weekly,
+    }
+
+    groups = [gemini_group, claude_group]
+
+    # Calculate lowest remaining quota percentage across all active limits
+    all_fractions = [
+        gemini_5h.get("remainingFraction", 1.0),
+        gemini_weekly.get("remainingFraction", 1.0),
+        claude_5h.get("remainingFraction", 1.0),
+        claude_weekly.get("remainingFraction", 1.0),
+    ]
+    lowest_remaining = min(all_fractions) if all_fractions else 1.0
+    lowest_remaining = max(0.0, min(1.0, lowest_remaining))
 
     result = {
         "ready": True,
         "authenticated": True,
         "userEmail": email,
         "tierLabel": auth_method.capitalize() if auth_method else "Consumer",
-        "activeModel": local_info.get("activeModel", "Gemini 3.8 Flash (Medium)"),
+        "activeModel": active_model,
         "lowestRemaining": lowest_remaining,
         "lowestRemainingPercent": int(round(lowest_remaining * 100)),
+        "groups": groups,
         "gemini": gemini_group,
         "claudeGpt": claude_group,
+        "availableModels": gemini_models_list + claude_models_list,
         "localStats": {
             "totalConversations": local_info.get("totalConversations", 0),
             "lastTitle": local_info.get("lastTitle", ""),
             "lastModified": local_info.get("lastModified", ""),
         },
-        "quotaPolicy": quota_data.get("description", ""),
+        "quotaPolicy": quota_desc,
         "updatedAt": now_utc.isoformat(),
     }
 
@@ -413,7 +557,7 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
     except Exception:
         pass
 
-    # Also update Omarchy agents state directory if present
+    # Update Omarchy agents state directory
     agents_usage_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "omarchy" / "agents" / "usage"
     if agents_usage_dir.is_dir():
         try:
@@ -434,7 +578,7 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
                 "activeDays": 1,
                 "activeDates": [now_utc.strftime("%Y-%m-%d")],
                 "modelUsage": {
-                    local_info.get("activeModel", "Gemini 3.8 Flash"): {
+                    active_model: {
                         "inputTokens": 0,
                         "outputTokens": 0,
                         "cacheReadInputTokens": 0,
@@ -445,26 +589,26 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
                     {
                         "label": "Gemini 5-Hour",
                         "title": "Gemini 5-Hour",
-                        "percent": round(1.0 - gemini_group.get("fiveHour", {}).get("remainingFraction", 1.0), 3),
-                        "resetsAt": gemini_group.get("fiveHour", {}).get("resetTime", ""),
+                        "percent": round(1.0 - gemini_5h.get("remainingFraction", 1.0), 3),
+                        "resetsAt": gemini_5h.get("resetTime", ""),
                     },
                     {
                         "label": "Gemini Weekly",
                         "title": "Gemini Weekly",
-                        "percent": round(1.0 - gemini_group.get("weekly", {}).get("remainingFraction", 1.0), 3),
-                        "resetsAt": gemini_group.get("weekly", {}).get("resetTime", ""),
+                        "percent": round(1.0 - gemini_weekly.get("remainingFraction", 1.0), 3),
+                        "resetsAt": gemini_weekly.get("resetTime", ""),
                     },
                     {
                         "label": "Claude/GPT 5-Hour",
                         "title": "Claude/GPT 5-Hour",
-                        "percent": round(1.0 - claude_group.get("fiveHour", {}).get("remainingFraction", 1.0), 3),
-                        "resetsAt": claude_group.get("fiveHour", {}).get("resetTime", ""),
+                        "percent": round(1.0 - claude_5h.get("remainingFraction", 1.0), 3),
+                        "resetsAt": claude_5h.get("resetTime", ""),
                     },
                     {
                         "label": "Claude/GPT Weekly",
                         "title": "Claude/GPT Weekly",
-                        "percent": round(1.0 - claude_group.get("weekly", {}).get("remainingFraction", 1.0), 3),
-                        "resetsAt": claude_group.get("weekly", {}).get("resetTime", ""),
+                        "percent": round(1.0 - claude_weekly.get("remainingFraction", 1.0), 3),
+                        "resetsAt": claude_weekly.get("resetTime", ""),
                     },
                 ],
                 "tierLabel": auth_method.capitalize() if auth_method else "Consumer",

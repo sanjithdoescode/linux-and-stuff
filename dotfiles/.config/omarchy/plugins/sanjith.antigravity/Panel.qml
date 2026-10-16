@@ -90,11 +90,27 @@ Panel {
   function barTooltip() {
     if (!usageData) return "Google Antigravity\nClick to view limits"
     var text = "Google Antigravity (" + (usageData.activeModel || "Gemini") + ")"
-    if (usageData.gemini && usageData.gemini.fiveHour) {
-      text += "\nGemini: 5h " + usageData.gemini.fiveHour.remainingPercent + "% · Wk " + (usageData.gemini.weekly ? usageData.gemini.weekly.remainingPercent : 100) + "%"
-    }
-    if (usageData.claudeGpt && usageData.claudeGpt.fiveHour) {
-      text += "\nClaude/GPT: 5h " + usageData.claudeGpt.fiveHour.remainingPercent + "% · Wk " + (usageData.claudeGpt.weekly ? usageData.claudeGpt.weekly.remainingPercent : 100) + "%"
+    if (usageData.groups && usageData.groups.length > 0) {
+      for (var i = 0; i < usageData.groups.length; i++) {
+        var g = usageData.groups[i]
+        var name = g.displayName || "Models"
+        var shortName = name.replace(/ models/i, "")
+        var line = "\n" + shortName + ":"
+        if (g.fiveHour && g.fiveHour.remainingPercent !== undefined) {
+          line += " 5h " + g.fiveHour.remainingPercent + "%"
+        }
+        if (g.weekly && g.weekly.remainingPercent !== undefined) {
+          line += " · Wk " + (g.weekly.isUnlimited ? "∞" : (g.weekly.remainingPercent + "%"))
+        }
+        text += line
+      }
+    } else {
+      if (usageData.gemini && usageData.gemini.fiveHour) {
+        text += "\nGemini: 5h " + usageData.gemini.fiveHour.remainingPercent + "% · Wk " + (usageData.gemini.weekly ? (usageData.gemini.weekly.isUnlimited ? "∞" : usageData.gemini.weekly.remainingPercent + "%") : "100%")
+      }
+      if (usageData.claudeGpt && usageData.claudeGpt.fiveHour) {
+        text += "\nClaude/GPT: 5h " + usageData.claudeGpt.fiveHour.remainingPercent + "% · Wk " + (usageData.claudeGpt.weekly ? usageData.claudeGpt.weekly.remainingPercent + "%" : "100%")
+      }
     }
     return text
   }
@@ -409,124 +425,126 @@ Panel {
           }
 
           // =============================================================
-          // SECTION 1: GEMINI MODELS (5-Hour & Weekly Limits)
+          // DYNAMIC MODEL GROUPS & RATE LIMITS
           // =============================================================
-          Column {
-            id: geminiSection
-            width: parent.width
-            spacing: Style.space(10)
+          Repeater {
+            model: (root.usageData && root.usageData.groups && root.usageData.groups.length > 0)
+              ? root.usageData.groups
+              : [
+                  (root.usageData && root.usageData.gemini) ? root.usageData.gemini : ({ displayName: "GEMINI MODELS" }),
+                  (root.usageData && root.usageData.claudeGpt) ? root.usageData.claudeGpt : ({ displayName: "CLAUDE AND GPT MODELS" })
+                ]
 
-            PanelSectionHeader {
+            delegate: Column {
+              id: groupCol
               width: parent.width
-              text: "GEMINI MODELS"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
+              spacing: Style.space(10)
+              required property var modelData
+              required property int index
 
-            Text {
-              text: "Gemini 3.8 Flash · Gemini 3.7 Flash · Gemini 3.1 Pro"
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-              width: parent.width
-            }
+              PanelSeparator {
+                visible: index > 0
+                foreground: root.foreground
+              }
 
-            // Five Hour Limit Remaining for Gemini
-            LimitRow {
-              width: parent.width
-              windowTitle: "Five Hour Limit Remaining"
-              remainingFraction: root.usageData && root.usageData.gemini && root.usageData.gemini.fiveHour && root.usageData.gemini.fiveHour.remainingFraction !== undefined
-                ? Number(root.usageData.gemini.fiveHour.remainingFraction) : -1.0
-              remainingPercent: root.usageData && root.usageData.gemini && root.usageData.gemini.fiveHour && root.usageData.gemini.fiveHour.remainingPercent !== undefined
-                ? Number(root.usageData.gemini.fiveHour.remainingPercent) : -1
-              usedPercent: root.usageData && root.usageData.gemini && root.usageData.gemini.fiveHour && root.usageData.gemini.fiveHour.usedPercent !== undefined
-                ? Number(root.usageData.gemini.fiveHour.usedPercent) : -1
-              resetsFormatted: root.usageData && root.usageData.gemini && root.usageData.gemini.fiveHour
-                ? String(root.usageData.gemini.fiveHour.resetsFormatted || "") : ""
-              resetTime: root.usageData && root.usageData.gemini && root.usageData.gemini.fiveHour
-                ? String(root.usageData.gemini.fiveHour.resetTime || "") : ""
-            }
+              PanelSectionHeader {
+                width: parent.width
+                text: (modelData.displayName || "MODELS").toUpperCase()
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+              }
 
-            Item { width: 1; height: Style.space(4) }
+              Text {
+                text: modelData.modelsSummary || modelData.models || ""
+                color: root.dim
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                elide: Text.ElideRight
+                width: parent.width
+                visible: text !== ""
+              }
 
-            // Weekly Limit Remaining for Gemini
-            LimitRow {
-              width: parent.width
-              windowTitle: "Weekly Limit Remaining"
-              remainingFraction: root.usageData && root.usageData.gemini && root.usageData.gemini.weekly && root.usageData.gemini.weekly.remainingFraction !== undefined
-                ? Number(root.usageData.gemini.weekly.remainingFraction) : -1.0
-              remainingPercent: root.usageData && root.usageData.gemini && root.usageData.gemini.weekly && root.usageData.gemini.weekly.remainingPercent !== undefined
-                ? Number(root.usageData.gemini.weekly.remainingPercent) : -1
-              usedPercent: root.usageData && root.usageData.gemini && root.usageData.gemini.weekly && root.usageData.gemini.weekly.usedPercent !== undefined
-                ? Number(root.usageData.gemini.weekly.usedPercent) : -1
-              resetsFormatted: root.usageData && root.usageData.gemini && root.usageData.gemini.weekly
-                ? String(root.usageData.gemini.weekly.resetsFormatted || "") : ""
-              resetTime: root.usageData && root.usageData.gemini && root.usageData.gemini.weekly
-                ? String(root.usageData.gemini.weekly.resetTime || "") : ""
-            }
-          }
+              // Five Hour Limit Remaining
+              LimitRow {
+                visible: modelData.fiveHour && (modelData.fiveHour.remainingFraction !== undefined || modelData.fiveHour.remainingPercent !== undefined)
+                width: parent.width
+                windowTitle: (modelData.fiveHour && modelData.fiveHour.displayName) ? modelData.fiveHour.displayName : "Five Hour Limit Remaining"
+                remainingFraction: modelData.fiveHour && modelData.fiveHour.remainingFraction !== undefined
+                  ? Number(modelData.fiveHour.remainingFraction) : -1.0
+                remainingPercent: modelData.fiveHour && modelData.fiveHour.remainingPercent !== undefined
+                  ? Number(modelData.fiveHour.remainingPercent) : -1
+                usedPercent: modelData.fiveHour && modelData.fiveHour.usedPercent !== undefined
+                  ? Number(modelData.fiveHour.usedPercent) : -1
+                resetsFormatted: modelData.fiveHour ? String(modelData.fiveHour.resetsFormatted || "") : ""
+                resetTime: modelData.fiveHour ? String(modelData.fiveHour.resetTime || "") : ""
+                isUnlimited: modelData.fiveHour ? !!modelData.fiveHour.isUnlimited : false
+              }
 
-          PanelSeparator {
-            foreground: root.foreground
-          }
+              Item {
+                width: 1
+                height: Style.space(4)
+                visible: modelData.fiveHour && modelData.weekly
+              }
 
-          // =============================================================
-          // SECTION 2: CLAUDE & GPT MODELS (5-Hour & Weekly Limits)
-          // =============================================================
-          Column {
-            id: claudeSection
-            width: parent.width
-            spacing: Style.space(10)
+              // Weekly Limit Remaining
+              LimitRow {
+                visible: modelData.weekly && (modelData.weekly.remainingFraction !== undefined || modelData.weekly.remainingPercent !== undefined)
+                width: parent.width
+                windowTitle: (modelData.weekly && modelData.weekly.displayName) ? modelData.weekly.displayName : "Weekly Limit Remaining"
+                remainingFraction: modelData.weekly && modelData.weekly.remainingFraction !== undefined
+                  ? Number(modelData.weekly.remainingFraction) : -1.0
+                remainingPercent: modelData.weekly && modelData.weekly.remainingPercent !== undefined
+                  ? Number(modelData.weekly.remainingPercent) : -1
+                usedPercent: modelData.weekly && modelData.weekly.usedPercent !== undefined
+                  ? Number(modelData.weekly.usedPercent) : -1
+                resetsFormatted: modelData.weekly ? String(modelData.weekly.resetsFormatted || "") : ""
+                resetTime: modelData.weekly ? String(modelData.weekly.resetTime || "") : ""
+                isUnlimited: modelData.weekly ? !!modelData.weekly.isUnlimited : false
+              }
 
-            PanelSectionHeader {
-              width: parent.width
-              text: "CLAUDE AND GPT MODELS"
-              foreground: root.foreground
-              fontFamily: root.fontFamily
-            }
+              // Model Badges in this group
+              Flow {
+                width: parent.width
+                spacing: Style.space(6)
+                visible: modelData.modelsList && modelData.modelsList.length > 0
 
-            Text {
-              text: "Claude Sonnet 4.6 · Claude Opus 4.6 · GPT-OSS 120B"
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-              width: parent.width
-            }
+                Repeater {
+                  model: modelData.modelsList
+                  delegate: BorderSurface {
+                    id: chip
+                    required property var modelData
+                    radius: Style.cornerRadius
+                    implicitHeight: chipRow.implicitHeight + Style.space(6)
+                    implicitWidth: chipRow.implicitWidth + Style.space(12)
+                    color: modelData.isActive ? root.alpha(Color.accent, 0.15) : root.alpha(root.foreground, 0.04)
+                    borderSpec: Border.controlSpec("normal", modelData.isActive ? Color.accent : root.alpha(root.dim, 0.35), Color.accent)
 
-            // Five Hour Limit Remaining for Claude / GPT
-            LimitRow {
-              width: parent.width
-              windowTitle: "Five Hour Limit Remaining"
-              remainingFraction: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.fiveHour && root.usageData.claudeGpt.fiveHour.remainingFraction !== undefined
-                ? Number(root.usageData.claudeGpt.fiveHour.remainingFraction) : -1.0
-              remainingPercent: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.fiveHour && root.usageData.claudeGpt.fiveHour.remainingPercent !== undefined
-                ? Number(root.usageData.claudeGpt.fiveHour.remainingPercent) : -1
-              usedPercent: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.fiveHour && root.usageData.claudeGpt.fiveHour.usedPercent !== undefined
-                ? Number(root.usageData.claudeGpt.fiveHour.usedPercent) : -1
-              resetsFormatted: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.fiveHour
-                ? String(root.usageData.claudeGpt.fiveHour.resetsFormatted || "") : ""
-              resetTime: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.fiveHour
-                ? String(root.usageData.claudeGpt.fiveHour.resetTime || "") : ""
-            }
+                    Row {
+                      id: chipRow
+                      anchors.centerIn: parent
+                      spacing: Style.space(6)
 
-            Item { width: 1; height: Style.space(4) }
+                      Text {
+                        text: modelData.displayName || modelData.id
+                        color: modelData.isActive ? Color.accent : root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                        font.bold: modelData.isActive
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
 
-            // Weekly Limit Remaining for Claude / GPT
-            LimitRow {
-              width: parent.width
-              windowTitle: "Weekly Limit Remaining"
-              remainingFraction: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.weekly && root.usageData.claudeGpt.weekly.remainingFraction !== undefined
-                ? Number(root.usageData.claudeGpt.weekly.remainingFraction) : -1.0
-              remainingPercent: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.weekly && root.usageData.claudeGpt.weekly.remainingPercent !== undefined
-                ? Number(root.usageData.claudeGpt.weekly.remainingPercent) : -1
-              usedPercent: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.weekly && root.usageData.claudeGpt.weekly.usedPercent !== undefined
-                ? Number(root.usageData.claudeGpt.weekly.usedPercent) : -1
-              resetsFormatted: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.weekly
-                ? String(root.usageData.claudeGpt.weekly.resetsFormatted || "") : ""
-              resetTime: root.usageData && root.usageData.claudeGpt && root.usageData.claudeGpt.weekly
-                ? String(root.usageData.claudeGpt.weekly.resetTime || "") : ""
+                      Rectangle {
+                        visible: modelData.isActive
+                        width: Style.space(6)
+                        height: Style.space(6)
+                        radius: width / 2
+                        color: Color.accent
+                        anchors.verticalCenter: parent.verticalCenter
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
 
@@ -605,10 +623,11 @@ Panel {
     property int usedPercent: -1
     property string resetsFormatted: ""
     property string resetTime: ""
+    property bool isUnlimited: false
     readonly property bool isLoaded: remainingFraction >= 0
 
-    readonly property bool isAlarming: isLoaded && remainingFraction <= 0.15
-    readonly property bool isWarning: isLoaded && remainingFraction <= 0.35 && !isAlarming
+    readonly property bool isAlarming: isLoaded && !isUnlimited && remainingFraction <= 0.15
+    readonly property bool isWarning: isLoaded && !isUnlimited && remainingFraction <= 0.35 && !isAlarming
 
     width: parent ? parent.width : implicitWidth
     spacing: Style.space(4)
@@ -632,9 +651,11 @@ Panel {
       Text {
         id: lblValues
         textFormat: Text.PlainText
-        text: row.isLoaded
-          ? (row.remainingPercent + "% remaining (" + row.usedPercent + "% used)")
-          : "Loading..."
+        text: {
+          if (!row.isLoaded) return "Loading..."
+          if (row.isUnlimited) return "Unlimited (No weekly cap)"
+          return row.remainingPercent + "% remaining (" + row.usedPercent + "% used)"
+        }
         color: !row.isLoaded ? root.dim : (row.isAlarming ? root.urgent : (row.isWarning ? root.foreground : Color.accent))
         font.family: root.fontFamily
         font.pixelSize: Style.font.caption
@@ -674,7 +695,7 @@ Panel {
     Row {
       width: parent.width
       spacing: Style.space(6)
-      visible: row.isLoaded && row.resetsFormatted !== ""
+      visible: row.isLoaded && !row.isUnlimited && row.resetsFormatted !== ""
 
       Text {
         text: "󱎫"

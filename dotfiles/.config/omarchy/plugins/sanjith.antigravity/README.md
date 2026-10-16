@@ -4,13 +4,14 @@ Real-time Google Antigravity quota and rate limit monitor for the Omarchy status
 
 ## Overview
 
-This plugin displays real-time quota usage and limits for Google Antigravity (`agy`), neatly organized into the two primary model groups:
-1. **Gemini Models** (Gemini 3.8 Flash, Gemini 3.7 Flash, Gemini 3.1 Pro)
+This plugin displays real-time quota usage and limits for Google Antigravity (`agy`), dynamically discovering whatever models you have access to:
+1. **Gemini Models** (e.g. `Gemini 3.8 Flash (High)`, `Gemini 3.8 Flash (Medium)`, `Gemini 3.8 Flash (Low)`)
    - **5-Hour Session Limit**: Percentage remaining/used, progress bar, and exact reset countdown.
-   - **Weekly Limit**: Percentage remaining/used, progress bar, and reset countdown.
-2. **Claude and GPT Models** (Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B)
+   - **Weekly Limit**: Percentage remaining/used, progress bar, and exact weekly reset countdown.
+2. **Claude and GPT Models** (e.g. `Claude Sonnet 4.6 (Thinking)`, `Claude Opus 4.6 (Thinking)`, `GPT-OSS 120B (Medium)`)
    - **5-Hour Session Limit**: Percentage remaining/used, progress bar, and reset countdown.
    - **Weekly Limit**: Percentage remaining/used, progress bar, and reset countdown.
+3. **Dynamic Model Discovery**: Automatically adapts to newly added or revamped models from the Antigravity backend without breaking. Shows model pill badges with live status and active model indicator.
 
 ## Features
 

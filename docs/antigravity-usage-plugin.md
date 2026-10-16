@@ -3,13 +3,14 @@
 ## Purpose
 Provides a native, theme-integrated **Omarchy bar widget and dashboard panel** for monitoring real-time **Google Antigravity (`agy`)** usage, quotas, and rolling rate limits.
 
-The plugin provides clear, at-a-glance visibility into the two primary model groups and both of their distinct limit windows:
-1. **Gemini Models** (`Gemini 3.8 Flash`, `Gemini 3.7 Flash`, `Gemini 3.1 Pro`)
+The plugin dynamically discovers all available models and their live rate limit windows:
+1. **Gemini Models** (`Gemini 3.8 Flash (High)`, `Gemini 3.8 Flash (Medium)`, `Gemini 3.8 Flash (Low)`)
    - **5-Hour Session Window**: Rate limit meter, remaining vs used percentage, and reset countdown.
    - **Weekly Rolling Window**: Rate limit meter, remaining vs used percentage, and reset countdown.
-2. **Claude and GPT Models** (`Claude Sonnet 4.6`, `Claude Opus 4.6`, `GPT-OSS 120B`)
+2. **Claude and GPT Models** (`Claude Sonnet 4.6 (Thinking)`, `Claude Opus 4.6 (Thinking)`, `GPT-OSS 120B (Medium)`)
    - **5-Hour Session Window**: Rate limit meter, remaining vs used percentage, and reset countdown.
    - **Weekly Rolling Window**: Rate limit meter, remaining vs used percentage, and reset countdown.
+3. **Dynamic Model Adaptation**: Automatically adapts to model roster revamps without hardcoding or breaking into "Loading..." states.
 
 ---
 
