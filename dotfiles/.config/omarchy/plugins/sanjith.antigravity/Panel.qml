@@ -43,8 +43,12 @@ Panel {
   property bool loading: false
   property string errorMessage: ""
   property double nowMs: Date.now()
-  property bool cursorActive: false
   property string currentView: "quotas" // "quotas" | "tokens"
+  onCurrentViewChanged: {
+    if (typeof panelFlick !== "undefined" && panelFlick) {
+      panelFlick.contentY = 0
+    }
+  }
 
   // Check if any limit is below 15% remaining (alarming threshold)
   readonly property bool alarming: {
@@ -217,7 +221,7 @@ Panel {
         Text {
           id: percentLabel
           anchors.verticalCenter: parent.verticalCenter
-          visible: root.showPercentage && root.usageData && root.usageData.lowestRemainingPercent !== undefined && !button.vertical
+          visible: !!(root.showPercentage && root.usageData && root.usageData.lowestRemainingPercent !== undefined && !button.vertical)
           text: (root.usageData && root.usageData.lowestRemainingPercent !== undefined)
             ? (root.usageData.lowestRemainingPercent + "%")
             : ""
@@ -266,13 +270,6 @@ Panel {
 
     onOpenChanged: {
       if (open) {
-        panelFlick.contentY = 0
-      }
-    }
-
-    Connections {
-      target: root
-      function onCurrentViewChanged() {
         panelFlick.contentY = 0
       }
     }
@@ -594,7 +591,7 @@ Panel {
 
               // Five Hour Limit Remaining
               LimitRow {
-                visible: modelData.fiveHour && (modelData.fiveHour.remainingFraction !== undefined || modelData.fiveHour.remainingPercent !== undefined)
+                visible: !!(modelData.fiveHour && (modelData.fiveHour.remainingFraction !== undefined || modelData.fiveHour.remainingPercent !== undefined))
                 width: parent.width
                 windowTitle: (modelData.fiveHour && modelData.fiveHour.displayName) ? modelData.fiveHour.displayName : "Five Hour Limit Remaining"
                 remainingFraction: modelData.fiveHour && modelData.fiveHour.remainingFraction !== undefined
@@ -611,12 +608,12 @@ Panel {
               Item {
                 width: 1
                 height: Style.space(4)
-                visible: modelData.fiveHour && modelData.weekly
+                visible: !!(modelData.fiveHour && modelData.weekly)
               }
 
               // Weekly Limit Remaining
               LimitRow {
-                visible: modelData.weekly && (modelData.weekly.remainingFraction !== undefined || modelData.weekly.remainingPercent !== undefined)
+                visible: !!(modelData.weekly && (modelData.weekly.remainingFraction !== undefined || modelData.weekly.remainingPercent !== undefined))
                 width: parent.width
                 windowTitle: (modelData.weekly && modelData.weekly.displayName) ? modelData.weekly.displayName : "Weekly Limit Remaining"
                 remainingFraction: modelData.weekly && modelData.weekly.remainingFraction !== undefined
@@ -634,7 +631,7 @@ Panel {
               Flow {
                 width: parent.width
                 spacing: Style.space(6)
-                visible: modelData.modelsList && modelData.modelsList.length > 0
+                visible: !!(modelData.modelsList && modelData.modelsList.length > 0)
 
                 Repeater {
                   model: modelData.modelsList
