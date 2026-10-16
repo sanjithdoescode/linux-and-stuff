@@ -304,12 +304,51 @@ def fetch_usage_from_api(access_token: str) -> Tuple[Optional[List[Dict[str, Any
     return None, ""
 
 
+MODEL_SWITCH_REGEX = re.compile(
+    r"`Model Selection`\s+from\s+(?:.*?)\s+to\s+(.*?)\.(?:\s*No need to comment|\n|$)",
+    re.DOTALL,
+)
+
+
+def canonicalize_model_name(
+    raw_name: Optional[str],
+    discovered_models: Optional[List[Dict[str, Any]]] = None,
+    default_model: str = "Gemini 3.8 Flash (Medium)",
+) -> str:
+    if not raw_name or raw_name.strip() in ("", "None"):
+        return default_model
+    r = raw_name.strip()
+    rl = r.lower()
+
+    if discovered_models:
+        for m in discovered_models:
+            dname = m.get("displayName", "")
+            mid = m.get("id", "")
+            if rl == dname.lower() or rl == mid.lower():
+                return dname
+
+    if "claude" in rl:
+        if "opus" in rl:
+            return "Claude Opus 4.6 (Thinking)"
+        return "Claude Sonnet 4.6 (Thinking)"
+    if "gpt" in rl or "oss" in rl:
+        return "GPT-OSS 120B (Medium)"
+    if "gemini" in rl:
+        if "high" in rl or "pro" in rl:
+            return "Gemini 3.8 Flash (High)"
+        if "low" in rl or "lite" in rl:
+            return "Gemini 3.8 Flash (Low)"
+        return "Gemini 3.8 Flash (Medium)"
+    return r
+
+
 def aggregate_token_usage(active_model: str, discovered_models: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Incrementally aggregate token consumption metrics per model, daily history,
     and all-time totals from Antigravity local conversation transcripts.
-    Uses cached file metadata to parse new steps in <15ms.
+    Uses cached per-file metadata to parse new steps in <15ms.
     """
+    LEDGER_VERSION = 3
     ledger_path = token_ledger_file_path()
     ledger_data: Dict[str, Any] = {}
     if ledger_path.is_file():
@@ -319,17 +358,10 @@ def aggregate_token_usage(active_model: str, discovered_models: List[Dict[str, A
         except Exception:
             ledger_data = {}
 
+    if ledger_data.get("version") != LEDGER_VERSION:
+        ledger_data = {"version": LEDGER_VERSION, "files": {}}
+
     file_index = ledger_data.get("files", {})
-    daily_stats = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
-    for d, st in ledger_data.get("daily", {}).items():
-        daily_stats[d] = dict(st)
-
-    model_stats = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
-    for m, st in ledger_data.get("byModel", {}).items():
-        model_stats[m] = dict(st)
-
-    all_time = ledger_data.get("allTime", {"input": 0, "output": 0, "cache": 0, "steps": 0, "conversations": 0})
-
     brain_dir = Path.home() / ".gemini" / "antigravity-cli" / "brain"
     changed = False
 
@@ -343,66 +375,87 @@ def aggregate_token_usage(active_model: str, discovered_models: List[Dict[str, A
                 prev = file_index.get(str_path)
 
                 if prev and prev.get("mtime") == mtime and prev.get("size") == size:
-                    continue  # File unchanged, skip
+                    continue  # File unchanged, reuse cached per-file stats
 
-                # Parse file
-                file_tokens = {"input": 0, "output": 0, "cache": 0, "steps": 0}
+                f_daily = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
+                f_models = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
+                f_daily_models = defaultdict(lambda: defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0}))
+                f_all = {"input": 0, "output": 0, "cache": 0, "steps": 0}
+                curr_m = canonicalize_model_name(active_model, discovered_models)
+
                 with open(tpath, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
-                        if "input_tokens" not in line:
-                            continue
-                        try:
-                            d = json.loads(line)
-                            it = d.get("input_tokens")
-                            ot = d.get("output_tokens")
-                            crt = d.get("cache_read_tokens", 0)
-                            cat = d.get("created_at")
-                            if it is not None and ot is not None and cat:
-                                date_str = cat[:10]
+                        if "<USER_SETTINGS_CHANGE>" in line and "`Model Selection`" in line:
+                            m = MODEL_SWITCH_REGEX.search(line)
+                            if m:
+                                curr_m = canonicalize_model_name(m.group(1), discovered_models, active_model)
+                        if "input_tokens" in line:
+                            try:
+                                d = json.loads(line)
+                                it = d.get("input_tokens")
+                                ot = d.get("output_tokens")
+                                crt = d.get("cache_read_tokens", 0)
+                                cat = d.get("created_at")
+                                if it is not None and ot is not None and cat:
+                                    date_str = cat[:10]
+                                    f_daily[date_str]["input"] += it
+                                    f_daily[date_str]["output"] += ot
+                                    f_daily[date_str]["cache"] += crt
+                                    f_daily[date_str]["steps"] += 1
 
-                                # Subtract previous contributions of this file if re-reading
-                                if prev:
-                                    prev_tok = prev.get("tokens", {})
-                                    # To keep incremental simple and consistent across turns,
-                                    # full re-aggregation on updated files is handled cleanly
-                                    pass
+                                    f_models[curr_m]["input"] += it
+                                    f_models[curr_m]["output"] += ot
+                                    f_models[curr_m]["cache"] += crt
+                                    f_models[curr_m]["steps"] += 1
 
-                                file_tokens["input"] += it
-                                file_tokens["output"] += ot
-                                file_tokens["cache"] += crt
-                                file_tokens["steps"] += 1
+                                    f_daily_models[date_str][curr_m]["input"] += it
+                                    f_daily_models[date_str][curr_m]["output"] += ot
+                                    f_daily_models[date_str][curr_m]["cache"] += crt
+                                    f_daily_models[date_str][curr_m]["steps"] += 1
 
-                                daily_stats[date_str]["input"] += it
-                                daily_stats[date_str]["output"] += ot
-                                daily_stats[date_str]["cache"] += crt
-                                daily_stats[date_str]["steps"] += 1
-
-                                model_stats[active_model]["input"] += it
-                                model_stats[active_model]["output"] += ot
-                                model_stats[active_model]["cache"] += crt
-                                model_stats[active_model]["steps"] += 1
-
-                                all_time["input"] += it
-                                all_time["output"] += ot
-                                all_time["cache"] += crt
-                                all_time["steps"] += 1
-                        except Exception:
-                            pass
-
-                if file_tokens["steps"] > 0:
-                    all_time["conversations"] = len([f for f in file_index.values() if f.get("hasTokens")]) + 1
+                                    f_all["input"] += it
+                                    f_all["output"] += ot
+                                    f_all["cache"] += crt
+                                    f_all["steps"] += 1
+                            except Exception:
+                                pass
 
                 file_index[str_path] = {
                     "mtime": mtime,
                     "size": size,
-                    "hasTokens": file_tokens["steps"] > 0,
-                    "tokens": file_tokens,
+                    "hasTokens": f_all["steps"] > 0,
+                    "daily": {k: dict(v) for k, v in f_daily.items()},
+                    "byModel": {k: dict(v) for k, v in f_models.items()},
+                    "dailyModels": {d: {m: dict(st) for m, st in m_dict.items()} for d, m_dict in f_daily_models.items()},
+                    "allTime": f_all,
                 }
                 changed = True
             except Exception:
                 pass
 
+    daily_stats = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
+    model_stats = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
+    today_by_model = defaultdict(lambda: {"input": 0, "output": 0, "cache": 0, "steps": 0})
+    all_time = {"input": 0, "output": 0, "cache": 0, "steps": 0, "conversations": 0}
     now_date = dt.datetime.now().strftime("%Y-%m-%d")
+
+    for finfo in file_index.values():
+        if not finfo.get("hasTokens"):
+            continue
+        all_time["conversations"] += 1
+        for d, st in finfo.get("daily", {}).items():
+            for k in ("input", "output", "cache", "steps"):
+                daily_stats[d][k] += st.get(k, 0)
+        for m, st in finfo.get("byModel", {}).items():
+            for k in ("input", "output", "cache", "steps"):
+                model_stats[m][k] += st.get(k, 0)
+        dmodels = finfo.get("dailyModels", {}).get(now_date, {})
+        for m, st in dmodels.items():
+            for k in ("input", "output", "cache", "steps"):
+                today_by_model[m][k] += st.get(k, 0)
+        for k in ("input", "output", "cache", "steps"):
+            all_time[k] += finfo.get("allTime", {}).get(k, 0)
+
     today = daily_stats.get(now_date, {"input": 0, "output": 0, "cache": 0, "steps": 0})
     today_total = today["input"] + today["output"]
     all_time_total = all_time["input"] + all_time["output"]
@@ -449,16 +502,23 @@ def aggregate_token_usage(active_model: str, discovered_models: List[Dict[str, A
     by_model_dict: Dict[str, Any] = {}
     agent_model_usage: Dict[str, Any] = {}
 
-    for m in discovered_models:
-        dname = m.get("displayName", m.get("id", ""))
-        st = model_stats.get(dname, {"input": 0, "output": 0, "cache": 0, "steps": 0})
-        # If model is active model, ensure stats reflect current model
-        if dname.lower() == active_model.lower():
-            st = model_stats.get(active_model, st)
+    all_known_models: List[str] = [m.get("displayName", m.get("id", "")) for m in discovered_models]
+    for m in model_stats.keys():
+        if m and m not in all_known_models:
+            all_known_models.append(m)
 
+    for dname in all_known_models:
+        st = model_stats.get(dname, {"input": 0, "output": 0, "cache": 0, "steps": 0})
         tot = st["input"] + st["output"]
+
+        mid = dname.lower().replace(" ", "-").replace("(", "").replace(")", "")
+        for m in discovered_models:
+            if m.get("displayName", "").lower() == dname.lower():
+                mid = m.get("id", mid)
+                break
+
         by_model_dict[dname] = {
-            "id": m.get("id", ""),
+            "id": mid,
             "displayName": dname,
             "totalTokens": tot,
             "totalFormatted": format_tokens(tot),
@@ -489,6 +549,7 @@ def aggregate_token_usage(active_model: str, discovered_models: List[Dict[str, A
             "cacheTokens": today["cache"],
             "cacheFormatted": format_tokens(today["cache"]),
             "steps": today["steps"],
+            "byModelTokens": {m: st["input"] + st["output"] for m, st in today_by_model.items()},
         },
         "allTime": {
             "totalTokens": all_time_total,
@@ -511,10 +572,8 @@ def aggregate_token_usage(active_model: str, discovered_models: List[Dict[str, A
         try:
             with open(ledger_path, "w", encoding="utf-8") as f:
                 json.dump({
+                    "version": LEDGER_VERSION,
                     "files": file_index,
-                    "daily": {k: dict(v) for k, v in daily_stats.items()},
-                    "byModel": {k: dict(v) for k, v in model_stats.items()},
-                    "allTime": all_time,
                     "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(),
                 }, f, indent=2)
         except Exception:
@@ -535,6 +594,90 @@ def update_limit_countdowns(limit_dict: Dict[str, Any], now_utc: dt.datetime) ->
             limit_dict["resetsFormatted"] = format_duration(secs)
         except Exception:
             pass
+
+
+def sync_omarchy_state(
+    token_usage: Dict[str, Any],
+    local_info: Dict[str, Any],
+    active_model: str,
+    now_utc: dt.datetime,
+    email: str = "",
+    auth_method: str = "consumer",
+    gemini_5h: Optional[Dict[str, Any]] = None,
+    gemini_weekly: Optional[Dict[str, Any]] = None,
+    claude_5h: Optional[Dict[str, Any]] = None,
+    claude_weekly: Optional[Dict[str, Any]] = None,
+) -> None:
+    agents_usage_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "omarchy" / "agents" / "usage"
+    if not agents_usage_dir.is_dir():
+        return
+
+    gemini_5h = gemini_5h or {}
+    gemini_weekly = gemini_weekly or {}
+    claude_5h = claude_5h or {}
+    claude_weekly = claude_weekly or {}
+
+    try:
+        recent_days_omarchy = [
+            {"date": h["date"], "messageCount": h["steps"], "totalTokens": h["totalTokens"]}
+            for h in token_usage.get("history", [])[:7]
+        ]
+        today_data = token_usage.get("today", {})
+        today_by_model = today_data.get("byModelTokens", {})
+        if not today_by_model and active_model:
+            today_by_model = {active_model: today_data.get("totalTokens", 0)}
+
+        agent_record = {
+            "schemaVersion": 1,
+            "id": "antigravity",
+            "name": "Google Antigravity",
+            "updatedAt": now_utc.isoformat(),
+            "ready": True,
+            "hasLocalStats": True,
+            "todayPrompts": today_data.get("steps", 0),
+            "todaySessions": 1,
+            "todayTotalTokens": today_data.get("totalTokens", 0),
+            "todayTokensByModel": today_by_model,
+            "recentDays": recent_days_omarchy,
+            "totalPrompts": token_usage.get("allTime", {}).get("steps", local_info.get("totalConversations", 0)),
+            "totalSessions": local_info.get("totalConversations", 0),
+            "activeDays": len(token_usage.get("history", [])),
+            "activeDates": [h["date"] for h in token_usage.get("history", [])],
+            "modelUsage": token_usage.get("agentModelUsage", {}),
+            "limits": [
+                {
+                    "label": "Gemini 5-Hour",
+                    "title": "Gemini 5-Hour",
+                    "percent": round(1.0 - gemini_5h.get("remainingFraction", 1.0), 3),
+                    "resetsAt": gemini_5h.get("resetTime", ""),
+                },
+                {
+                    "label": "Gemini Weekly",
+                    "title": "Gemini Weekly",
+                    "percent": round(1.0 - gemini_weekly.get("remainingFraction", 1.0), 3),
+                    "resetsAt": gemini_weekly.get("resetTime", ""),
+                },
+                {
+                    "label": "Claude/GPT 5-Hour",
+                    "title": "Claude/GPT 5-Hour",
+                    "percent": round(1.0 - claude_5h.get("remainingFraction", 1.0), 3),
+                    "resetsAt": claude_5h.get("resetTime", ""),
+                },
+                {
+                    "label": "Claude/GPT Weekly",
+                    "title": "Claude/GPT Weekly",
+                    "percent": round(1.0 - claude_weekly.get("remainingFraction", 1.0), 3),
+                    "resetsAt": claude_weekly.get("resetTime", ""),
+                },
+            ],
+            "tierLabel": auth_method.capitalize() if auth_method else "Consumer",
+            "usageStatusText": "",
+            "authHelpText": "",
+        }
+        with open(agents_usage_dir / "antigravity.json", "w", encoding="utf-8") as f:
+            json.dump(agent_record, f, indent=2)
+    except Exception as e:
+        sys.stderr.write(f"sync_omarchy_state error: {e}\n")
 
 
 def collect_usage(force: bool = False) -> Dict[str, Any]:
@@ -562,22 +705,14 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
                         for group in cached.get("groups", []):
                             for limit_key in ["fiveHour", "weekly"]:
                                 update_limit_countdowns(group.get(limit_key, {}), now_utc)
-                            for m in group.get("modelsList", []):
-                                r_str = m.get("resetTime")
-                                if r_str:
-                                    try:
-                                        p = dt.datetime.fromisoformat(r_str.replace("Z", "+00:00"))
-                                        secs = max(0.0, (p - now_utc).total_seconds())
-                                        m["resetsFormatted"] = format_duration(secs)
-                                    except Exception:
-                                        pass
-                                m["isActive"] = (
-                                    m.get("displayName", "").strip().lower() == active_model.strip().lower()
-                                    or m.get("id", "").strip().lower() == active_model.strip().lower()
-                                    or active_model.strip().lower().startswith(m.get("displayName", "").strip().lower())
-                                )
+
+                        # Always evaluate live local token usage & attribution
+                        discovered = cached.get("availableModels", []) or get_discovered_models(force=False)
+                        token_usage = aggregate_token_usage(active_model, discovered)
+                        cached["tokenUsage"] = token_usage
 
                         for m in cached.get("availableModels", []):
+                            dname = m.get("displayName", m.get("id", ""))
                             r_str = m.get("resetTime")
                             if r_str:
                                 try:
@@ -587,10 +722,46 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
                                 except Exception:
                                     pass
                             m["isActive"] = (
-                                m.get("displayName", "").strip().lower() == active_model.strip().lower()
+                                dname.strip().lower() == active_model.strip().lower()
                                 or m.get("id", "").strip().lower() == active_model.strip().lower()
-                                or active_model.strip().lower().startswith(m.get("displayName", "").strip().lower())
+                                or active_model.strip().lower().startswith(dname.strip().lower())
                             )
+                            m["tokens"] = token_usage.get("byModel", {}).get(dname, {
+                                "id": m.get("id", ""),
+                                "displayName": dname,
+                                "totalTokens": 0,
+                                "totalFormatted": "0",
+                                "inputTokens": 0,
+                                "inputFormatted": "0",
+                                "outputTokens": 0,
+                                "outputFormatted": "0",
+                                "cacheTokens": 0,
+                                "cacheFormatted": "0",
+                                "steps": 0,
+                            })
+
+                        for group in cached.get("groups", []):
+                            for m in group.get("modelsList", []):
+                                dname = m.get("displayName", m.get("id", ""))
+                                m["tokens"] = token_usage.get("byModel", {}).get(dname, {})
+                                m["isActive"] = (
+                                    dname.strip().lower() == active_model.strip().lower()
+                                    or m.get("id", "").strip().lower() == active_model.strip().lower()
+                                    or active_model.strip().lower().startswith(dname.strip().lower())
+                                )
+
+                        sync_omarchy_state(
+                            token_usage=token_usage,
+                            local_info=local_info,
+                            active_model=active_model,
+                            now_utc=now_utc,
+                            email=cached.get("userEmail", ""),
+                            auth_method=cached.get("tierLabel", "consumer").lower(),
+                            gemini_5h=cached.get("gemini", {}).get("fiveHour", {}),
+                            gemini_weekly=cached.get("gemini", {}).get("weekly", {}),
+                            claude_5h=cached.get("claudeGpt", {}).get("fiveHour", {}),
+                            claude_weekly=cached.get("claudeGpt", {}).get("weekly", {}),
+                        )
 
                         return cached
             elif not force and age >= CACHE_TTL_SECONDS:
@@ -607,6 +778,14 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
                 with open(cache_path, "r", encoding="utf-8") as f:
                     cached = json.load(f)
                     if cached.get("ready"):
+                        local_info = get_local_antigravity_info()
+                        active_model = local_info.get("activeModel", cached.get("activeModel", "Gemini 3.8 Flash (Medium)"))
+                        discovered = cached.get("availableModels", []) or get_discovered_models(force=False)
+                        token_usage = aggregate_token_usage(active_model, discovered)
+                        cached["tokenUsage"] = token_usage
+                        for m in cached.get("availableModels", []):
+                            dname = m.get("displayName", m.get("id", ""))
+                            m["tokens"] = token_usage.get("byModel", {}).get(dname, {})
                         return cached
         except Exception:
             pass
@@ -759,7 +938,6 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
 
     groups = [gemini_group, claude_group]
 
-    # Calculate lowest remaining quota percentage across all active limits
     all_fractions = [
         gemini_5h.get("remainingFraction", 1.0),
         gemini_weekly.get("remainingFraction", 1.0),
@@ -798,73 +976,18 @@ def collect_usage(force: bool = False) -> Dict[str, Any]:
         pass
 
     # Update Omarchy agents state directory
-    agents_usage_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "omarchy" / "agents" / "usage"
-    if agents_usage_dir.is_dir():
-        try:
-            recent_days_omarchy = [
-                {"date": h["date"], "messageCount": h["steps"], "totalTokens": h["totalTokens"]}
-                for h in token_usage.get("history", [])[:7]
-            ]
-            agent_record = {
-                "schemaVersion": 1,
-                "id": "antigravity",
-                "name": "Google Antigravity",
-                "updatedAt": now_utc.isoformat(),
-                "ready": True,
-                "hasLocalStats": True,
-                "todayPrompts": token_usage.get("today", {}).get("steps", 1),
-                "todaySessions": 1,
-                "todayTotalTokens": token_usage.get("today", {}).get("totalTokens", 0),
-                "todayTokensByModel": {
-                    active_model: token_usage.get("today", {}).get("totalTokens", 0)
-                },
-                "recentDays": recent_days_omarchy,
-                "totalPrompts": token_usage.get("allTime", {}).get("steps", local_info.get("totalConversations", 0)),
-                "totalSessions": local_info.get("totalConversations", 0),
-                "activeDays": len(token_usage.get("history", [])),
-                "activeDates": [h["date"] for h in token_usage.get("history", [])],
-                "modelUsage": token_usage.get("agentModelUsage", {
-                    active_model: {
-                        "inputTokens": 0,
-                        "outputTokens": 0,
-                        "cacheReadInputTokens": 0,
-                        "cacheCreationInputTokens": 0,
-                    }
-                }),
-                "limits": [
-                    {
-                        "label": "Gemini 5-Hour",
-                        "title": "Gemini 5-Hour",
-                        "percent": round(1.0 - gemini_5h.get("remainingFraction", 1.0), 3),
-                        "resetsAt": gemini_5h.get("resetTime", ""),
-                    },
-                    {
-                        "label": "Gemini Weekly",
-                        "title": "Gemini Weekly",
-                        "percent": round(1.0 - gemini_weekly.get("remainingFraction", 1.0), 3),
-                        "resetsAt": gemini_weekly.get("resetTime", ""),
-                    },
-                    {
-                        "label": "Claude/GPT 5-Hour",
-                        "title": "Claude/GPT 5-Hour",
-                        "percent": round(1.0 - claude_5h.get("remainingFraction", 1.0), 3),
-                        "resetsAt": claude_5h.get("resetTime", ""),
-                    },
-                    {
-                        "label": "Claude/GPT Weekly",
-                        "title": "Claude/GPT Weekly",
-                        "percent": round(1.0 - claude_weekly.get("remainingFraction", 1.0), 3),
-                        "resetsAt": claude_weekly.get("resetTime", ""),
-                    },
-                ],
-                "tierLabel": auth_method.capitalize() if auth_method else "Consumer",
-                "usageStatusText": "",
-                "authHelpText": "",
-            }
-            with open(agents_usage_dir / "antigravity.json", "w", encoding="utf-8") as f:
-                json.dump(agent_record, f, indent=2)
-        except Exception:
-            pass
+    sync_omarchy_state(
+        token_usage=token_usage,
+        local_info=local_info,
+        active_model=active_model,
+        now_utc=now_utc,
+        email=email,
+        auth_method=auth_method,
+        gemini_5h=gemini_5h,
+        gemini_weekly=gemini_weekly,
+        claude_5h=claude_5h,
+        claude_weekly=claude_weekly,
+    )
 
     return result
 
