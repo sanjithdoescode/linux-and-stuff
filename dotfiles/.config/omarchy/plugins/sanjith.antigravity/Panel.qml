@@ -44,6 +44,7 @@ Panel {
   property string errorMessage: ""
   property double nowMs: Date.now()
   property bool cursorActive: false
+  property string currentView: "quotas" // "quotas" | "tokens"
 
   // Check if any limit is below 15% remaining (alarming threshold)
   readonly property bool alarming: {
@@ -185,6 +186,8 @@ Panel {
     function toggle(): void { root.toggle() }
     function refresh(): string { root.refresh(true); return "ok" }
     function getUsage(): string { return JSON.stringify(root.usageData) }
+    function setView(view: string): void { if (view === "quotas" || view === "tokens") root.currentView = view }
+    function toggleView(): void { root.currentView = (root.currentView === "quotas" ? "tokens" : "quotas") }
   }
 
   implicitWidth: button.implicitWidth
@@ -256,13 +259,32 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    contentHeight: panel.fittedContentHeight(mainColumn.implicitHeight, Style.space(760))
+    contentHeight: panel.fittedContentHeight(
+      root.currentView === "tokens" ? tokensColumn.implicitHeight : quotasColumn.implicitHeight,
+      root.currentView === "tokens" ? Style.space(660) : Style.space(490)
+    )
+
+    onOpenChanged: {
+      if (open) {
+        panelFlick.contentY = 0
+      }
+    }
+
+    Connections {
+      target: root
+      function onCurrentViewChanged() {
+        panelFlick.contentY = 0
+      }
+    }
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
 
       onMoveRequested: function(dx, dy) {
+        if (dx !== 0) {
+          root.currentView = (root.currentView === "quotas" ? "tokens" : "quotas")
+        }
         if (dy !== 0) {
           panelFlick.contentY = root.clamp(
             panelFlick.contentY + dy * Style.space(60),
@@ -272,25 +294,37 @@ Panel {
         }
       }
       onActivateRequested: root.refresh(true)
-      onCloseRequested: root.close()
+      onCloseRequested: {
+        if (root.currentView === "tokens") {
+          root.currentView = "quotas"
+        } else {
+          root.close()
+        }
+      }
       onTabRequested: function(direction) { root.switchPanel(direction) }
       onTextKey: function(t) {
         if (t === "r" || t === "R") root.refresh(true)
+        if (t === "t" || t === "T") root.currentView = (root.currentView === "quotas" ? "tokens" : "quotas")
+        if (t === "q" || t === "Q") root.currentView = "quotas"
       }
 
       Flickable {
         id: panelFlick
         anchors.fill: parent
         contentWidth: width
-        contentHeight: mainColumn.implicitHeight
+        contentHeight: root.currentView === "tokens" ? tokensColumn.implicitHeight : quotasColumn.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
         interactive: contentHeight > height
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+        // =============================================================
+        // VIEW 1: QUOTAS & LIMITS DASHBOARD (Clean, Focused, Overview)
+        // =============================================================
         Column {
-          id: mainColumn
+          id: quotasColumn
+          visible: root.currentView === "quotas"
           width: panelFlick.width
           spacing: Style.space(12)
 
@@ -332,6 +366,97 @@ Panel {
             }
           }
 
+          // ------------------------------------ Segmented View Switcher Tabs
+          BorderSurface {
+            width: parent.width
+            implicitHeight: tabRow1.implicitHeight + Style.space(6)
+            radius: Style.cornerRadius
+            color: root.alpha(root.foreground, 0.04)
+            borderSpec: Border.controlSpec("normal", root.alpha(root.dim, 0.25), Color.accent)
+
+            Row {
+              id: tabRow1
+              anchors.centerIn: parent
+              width: parent.width - Style.space(6)
+              spacing: Style.space(4)
+
+              readonly property real tabWidth: (width - spacing) / 2
+
+              // Tab 1: Quotas & Limits (Active)
+              BorderSurface {
+                width: parent.tabWidth
+                implicitHeight: tab1Content.implicitHeight + Style.space(10)
+                radius: Style.cornerRadius - 2
+                color: root.alpha(Color.accent, 0.2)
+                borderSpec: Border.controlSpec("normal", Color.accent, Color.accent)
+
+                Row {
+                  id: tab1Content
+                  anchors.centerIn: parent
+                  spacing: Style.space(6)
+
+                  Text {
+                    text: "󰚩"
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: "Quotas & Limits"
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+              }
+
+              // Tab 2: Token Consumption (Clickable)
+              BorderSurface {
+                width: parent.tabWidth
+                implicitHeight: tab2Content.implicitHeight + Style.space(10)
+                radius: Style.cornerRadius - 2
+                color: "transparent"
+                borderSpec: Border.controlSpec("normal", "transparent", Color.accent)
+
+                Row {
+                  id: tab2Content
+                  anchors.centerIn: parent
+                  spacing: Style.space(6)
+
+                  Text {
+                    text: "󰠮"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: {
+                      var t = "Tokens"
+                      if (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today) {
+                        t += " (" + root.usageData.tokenUsage.today.totalFormatted + ")"
+                      }
+                      return t
+                    }
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.currentView = "tokens"
+                }
+              }
+            }
+          }
+
           // ------------------------------------------------ Active Model Chip
           BorderSurface {
             width: parent.width
@@ -363,120 +488,6 @@ Panel {
                 font.bold: true
                 elide: Text.ElideRight
                 anchors.verticalCenter: parent.verticalCenter
-              }
-            }
-          }
-
-          // --------------------------------------------- Token Consumption Card
-          BorderSurface {
-            visible: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
-            width: parent.width
-            implicitHeight: tokenSummaryCol.implicitHeight + Style.space(16)
-            radius: Style.cornerRadius
-            color: root.alpha(root.foreground, 0.04)
-            borderSpec: Border.controlSpec("normal", root.alpha(root.dim, 0.35), Color.accent)
-
-            Column {
-              id: tokenSummaryCol
-              anchors.fill: parent
-              anchors.margins: Style.space(8)
-              spacing: Style.space(5)
-
-              Item {
-                width: parent.width
-                implicitHeight: Math.max(tknHeaderRow.implicitHeight, tknTodayVal.implicitHeight)
-
-                Row {
-                  id: tknHeaderRow
-                  spacing: Style.space(6)
-                  anchors.left: parent.left
-                  anchors.verticalCenter: parent.verticalCenter
-
-                  Text {
-                    text: "󰠮"
-                    color: Color.accent
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.body
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-
-                  Text {
-                    text: "Token Consumption"
-                    color: root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.caption
-                    font.bold: true
-                    anchors.verticalCenter: parent.verticalCenter
-                  }
-                }
-
-                Text {
-                  id: tknTodayVal
-                  text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
-                    ? (root.usageData.tokenUsage.today.totalFormatted + " burned today")
-                    : ""
-                  color: Color.accent
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                }
-              }
-
-              Row {
-                width: parent.width
-                spacing: Style.space(8)
-
-                Text {
-                  text: "Prompt: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today ? root.usageData.tokenUsage.today.inputFormatted : "0")
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  text: "·"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  text: "Output: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today ? root.usageData.tokenUsage.today.outputFormatted : "0")
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  text: "·"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  text: "Cache: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today ? root.usageData.tokenUsage.today.cacheFormatted : "0")
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  text: "·"
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                }
-
-                Text {
-                  text: "All-time: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.allTime ? root.usageData.tokenUsage.allTime.totalFormatted : "0")
-                  color: root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  font.bold: true
-                }
               }
             }
           }
@@ -671,21 +682,540 @@ Panel {
             }
           }
 
-          PanelSeparator {
-            foreground: root.foreground
+          // ----------------------------------- Token Consumption Launch Card
+          BorderSurface {
+            width: parent.width
+            radius: Style.cornerRadius
+            color: root.alpha(Color.accent, 0.08)
+            borderSpec: Border.controlSpec("normal", root.alpha(Color.accent, 0.35), Color.accent)
+
+            Item {
+              width: parent.width
+              implicitHeight: Math.max(tknTeaserLeft.implicitHeight, tknTeaserRight.implicitHeight) + Style.space(16)
+
+              Row {
+                id: tknTeaserLeft
+                anchors.left: parent.left
+                anchors.leftMargin: Style.space(10)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(8)
+
+                Text {
+                  text: "󰠮"
+                  color: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Column {
+                  spacing: Style.space(2)
+                  anchors.verticalCenter: parent.verticalCenter
+
+                  Text {
+                    text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                      ? (root.usageData.tokenUsage.today.totalFormatted + " tokens burned today")
+                      : "Token Consumption Available"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                  }
+
+                  Text {
+                    text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.allTime
+                      ? (root.usageData.tokenUsage.allTime.totalFormatted + " all-time · Click for 14-day history")
+                      : "Click to open dedicated analytics panel"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 1
+                  }
+                }
+              }
+
+              Row {
+                id: tknTeaserRight
+                anchors.right: parent.right
+                anchors.rightMargin: Style.space(10)
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.space(4)
+
+                Text {
+                  text: "Analytics →"
+                  color: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.currentView = "tokens"
+            }
           }
 
-          // =============================================================
-          // SECTION 2.5: TOKEN CONSUMPTION HISTORY
-          // =============================================================
+          // ------------------------------------------------ Footer Notes
+          Text {
+            width: parent.width
+            topPadding: Style.space(4)
+            text: "Quota is shared within model groups. Press [t] for token analytics, [r] to refresh, or [Esc] to close."
+            color: root.alpha(root.foreground, 0.45)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+        }
+
+        // =============================================================
+        // VIEW 2: DEDICATED TOKEN CONSUMPTION (Codex & Claude Code Style)
+        // =============================================================
+        Column {
+          id: tokensColumn
+          visible: root.currentView === "tokens"
+          width: panelFlick.width
+          spacing: Style.space(12)
+
+          // -------------------------------------- Sub-panel Navigation Bar
+          Row {
+            width: parent.width
+            spacing: Style.space(8)
+
+            Button {
+              text: "Quotas"
+              iconText: "󰁍"
+              bordered: true
+              foreground: root.foreground
+              accent: Color.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              verticalPadding: Style.spacing.controlPaddingY
+              onClicked: root.currentView = "quotas"
+            }
+
+            Item {
+              width: Math.max(1, parent.width - Style.space(220))
+              height: 1
+            }
+
+            BorderSurface {
+              radius: Style.cornerRadius
+              implicitHeight: badgeRow.implicitHeight + Style.space(6)
+              implicitWidth: badgeRow.implicitWidth + Style.space(12)
+              color: root.alpha(Color.accent, 0.12)
+              borderSpec: Border.controlSpec("normal", root.alpha(Color.accent, 0.35), Color.accent)
+
+              Row {
+                id: badgeRow
+                anchors.centerIn: parent
+                spacing: Style.space(4)
+
+                Text {
+                  text: "󰠮"
+                  color: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                  text: "Token Analytics"
+                  color: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+              }
+            }
+          }
+
+          // ------------------------ Segmented Switcher Tabs (Consistent navigation)
+          BorderSurface {
+            width: parent.width
+            implicitHeight: tabRow2.implicitHeight + Style.space(6)
+            radius: Style.cornerRadius
+            color: root.alpha(root.foreground, 0.04)
+            borderSpec: Border.controlSpec("normal", root.alpha(root.dim, 0.25), Color.accent)
+
+            Row {
+              id: tabRow2
+              anchors.centerIn: parent
+              width: parent.width - Style.space(6)
+              spacing: Style.space(4)
+
+              readonly property real tabWidth: (width - spacing) / 2
+
+              // Tab 1: Quotas & Limits (Clickable)
+              BorderSurface {
+                width: parent.tabWidth
+                implicitHeight: tab1Content2.implicitHeight + Style.space(10)
+                radius: Style.cornerRadius - 2
+                color: "transparent"
+                borderSpec: Border.controlSpec("normal", "transparent", Color.accent)
+
+                Row {
+                  id: tab1Content2
+                  anchors.centerIn: parent
+                  spacing: Style.space(6)
+
+                  Text {
+                    text: "󰚩"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: "Quotas & Limits"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.currentView = "quotas"
+                }
+              }
+
+              // Tab 2: Token Consumption (Active)
+              BorderSurface {
+                width: parent.tabWidth
+                implicitHeight: tab2Content2.implicitHeight + Style.space(10)
+                radius: Style.cornerRadius - 2
+                color: root.alpha(Color.accent, 0.2)
+                borderSpec: Border.controlSpec("normal", Color.accent, Color.accent)
+
+                Row {
+                  id: tab2Content2
+                  anchors.centerIn: parent
+                  spacing: Style.space(6)
+
+                  Text {
+                    text: "󰠮"
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                  Text {
+                    text: {
+                      var t = "Tokens"
+                      if (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today) {
+                        t += " (" + root.usageData.tokenUsage.today.totalFormatted + ")"
+                      }
+                      return t
+                    }
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+              }
+            }
+          }
+
+          // ----------------------------- Today's Burn Hero KPI Card (Claude/Codex Style)
+          BorderSurface {
+            width: parent.width
+            radius: Style.cornerRadius
+            color: root.alpha(Color.accent, 0.08)
+            borderSpec: Border.controlSpec("normal", root.alpha(Color.accent, 0.35), Color.accent)
+
+            Column {
+              width: parent.width
+              spacing: Style.space(10)
+              topPadding: Style.space(12)
+              bottomPadding: Style.space(12)
+              leftPadding: Style.space(12)
+              rightPadding: Style.space(12)
+
+              // Top row: Label on left, Big number on right
+              Item {
+                width: parent.width - Style.space(24)
+                implicitHeight: Math.max(kpiLabelCol.implicitHeight, kpiBigCol.implicitHeight)
+
+                Column {
+                  id: kpiLabelCol
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(2)
+
+                  Text {
+                    text: "TODAY'S TOKEN CONSUMPTION"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 1
+                    font.bold: true
+                  }
+                  Text {
+                    text: "Active session burn across Antigravity tasks"
+                    color: root.alpha(root.dim, 0.8)
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 2
+                  }
+                }
+
+                Column {
+                  id: kpiBigCol
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: 0
+
+                  Text {
+                    text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                      ? root.usageData.tokenUsage.today.totalFormatted
+                      : "0"
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.display
+                    font.bold: true
+                    anchors.right: parent.right
+                  }
+                  Text {
+                    text: (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                      ? root.usageData.tokenUsage.today.steps : 0) + " turns today"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 1
+                    anchors.right: parent.right
+                  }
+                }
+              }
+
+              Rectangle {
+                width: parent.width - Style.space(24)
+                height: 1
+                color: root.alpha(root.dim, 0.25)
+              }
+
+              // 3-column metrics grid
+              Row {
+                width: parent.width - Style.space(24)
+                spacing: Style.space(8)
+
+                readonly property real colWidth: (width - Style.space(16)) / 3
+
+                // Prompt (Input)
+                Column {
+                  width: parent.colWidth
+                  spacing: Style.space(2)
+                  Text {
+                    text: "Prompt (Input)"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 1
+                  }
+                  Text {
+                    text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                      ? root.usageData.tokenUsage.today.inputFormatted : "0"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                  }
+                }
+
+                // Generated (Output)
+                Column {
+                  width: parent.colWidth
+                  spacing: Style.space(2)
+                  Text {
+                    text: "Generated (Output)"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 1
+                  }
+                  Text {
+                    text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                      ? root.usageData.tokenUsage.today.outputFormatted : "0"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                  }
+                }
+
+                // Prompt Cache Read
+                Column {
+                  width: parent.colWidth
+                  spacing: Style.space(2)
+                  Text {
+                    text: "Cache Read"
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption - 1
+                  }
+                  Text {
+                    text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                      ? root.usageData.tokenUsage.today.cacheFormatted : "0"
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
+                  }
+                }
+              }
+            }
+          }
+
+          // --------------------------------------------- Lifetime Totals Card
+          BorderSurface {
+            width: parent.width
+            radius: Style.cornerRadius
+            color: root.alpha(root.foreground, 0.04)
+            borderSpec: Border.controlSpec("normal", root.alpha(root.dim, 0.3), Color.accent)
+
+            Row {
+              width: parent.width
+              topPadding: Style.space(10)
+              bottomPadding: Style.space(10)
+              leftPadding: Style.space(12)
+              rightPadding: Style.space(12)
+              spacing: Style.space(8)
+
+              readonly property real colWidth: (width - Style.space(24) - Style.space(16)) / 3
+
+              // Lifetime Volume
+              Column {
+                width: parent.colWidth
+                spacing: Style.space(2)
+                Text {
+                  text: "Lifetime Tokens"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption - 1
+                }
+                Text {
+                  text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.allTime
+                    ? root.usageData.tokenUsage.allTime.totalFormatted : "0"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+              }
+
+              // Conversations
+              Column {
+                width: parent.colWidth
+                spacing: Style.space(2)
+                Text {
+                  text: "Conversations"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption - 1
+                }
+                Text {
+                  text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.allTime
+                    ? String(root.usageData.tokenUsage.allTime.conversations) : "0"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+              }
+
+              // Total Steps
+              Column {
+                width: parent.colWidth
+                spacing: Style.space(2)
+                Text {
+                  text: "Lifetime Turns"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption - 1
+                }
+                Text {
+                  text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.allTime
+                    ? String(root.usageData.tokenUsage.allTime.steps) : "0"
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.bold: true
+                }
+              }
+            }
+          }
+
+          // --------------------------------------------- Model Attribution
           Column {
-            visible: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.history && root.usageData.tokenUsage.history.length > 0
             width: parent.width
             spacing: Style.space(8)
 
             PanelSectionHeader {
               width: parent.width
-              text: "TOKEN USAGE HISTORY"
+              text: "CONSUMPTION BY MODEL"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Repeater {
+              model: root.usageData && root.usageData.availableModels ? root.usageData.availableModels : []
+              delegate: Item {
+                id: modelItem
+                required property var modelData
+                width: parent.width
+                implicitHeight: Math.max(modLeftRow.implicitHeight, modRightText.implicitHeight) + Style.space(4)
+
+                Row {
+                  id: modLeftRow
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(6)
+
+                  Rectangle {
+                    width: Style.space(6)
+                    height: Style.space(6)
+                    radius: width / 2
+                    color: modelData.isActive ? Color.accent : root.dim
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Text {
+                    text: modelData.displayName
+                    color: modelData.isActive ? Color.accent : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: modelData.isActive
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                Text {
+                  id: modRightText
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: (modelData.tokens ? modelData.tokens.totalFormatted : "0") + " tokens (" + (modelData.tokens ? modelData.tokens.steps : 0) + " turns)"
+                  color: modelData.isActive ? Color.accent : root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: modelData.isActive
+                }
+              }
+            }
+          }
+
+          PanelSeparator {
+            foreground: root.foreground
+          }
+
+          // --------------------------------------------- 14-Day Visual Usage Ledger
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSectionHeader {
+              width: parent.width
+              text: "14-DAY TOKEN USAGE HISTORY"
               foreground: root.foreground
               fontFamily: root.fontFamily
             }
@@ -766,61 +1296,45 @@ Panel {
             }
           }
 
-          PanelSeparator {
-            visible: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.history && root.usageData.tokenUsage.history.length > 0
-            foreground: root.foreground
-          }
-
-          // =============================================================
-          // SECTION 3: RECENT LOCAL ACTIVITY
-          // =============================================================
-          Column {
+          // --------------------------------------------- Sub-panel Actions Footer
+          Row {
             width: parent.width
-            spacing: Style.space(8)
+            spacing: Style.spacing.md
 
-            PanelSectionHeader {
-              width: parent.width
-              text: "RECENT ACTIVITY"
+            readonly property real cellWidth: (width - spacing) / 2
+
+            Button {
+              width: parent.cellWidth
+              text: "Back to Quotas"
+              iconText: "󰁍"
+              bordered: true
               foreground: root.foreground
+              accent: Color.accent
               fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              verticalPadding: Style.spacing.controlPaddingY
+              onClicked: root.currentView = "quotas"
             }
 
-            Row {
-              width: parent.width
-              spacing: Style.space(8)
-
-              Text {
-                text: "Local Conversations:"
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-              Text {
-                text: root.usageData && root.usageData.localStats
-                  ? String(root.usageData.localStats.totalConversations) : "0"
-                color: root.foreground
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-                font.bold: true
-              }
-            }
-
-            Text {
-              visible: root.usageData && root.usageData.localStats && root.usageData.localStats.lastTitle !== ""
-              text: "Latest: " + (root.usageData ? root.usageData.localStats.lastTitle : "")
-              color: root.dim
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-              width: parent.width
+            Button {
+              width: parent.cellWidth
+              text: root.loading ? "Refreshing..." : "Refresh Ledger"
+              iconText: root.loading ? "󰑐" : "󰑓"
+              iconSpinning: root.loading
+              bordered: true
+              foreground: root.foreground
+              accent: Color.accent
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              verticalPadding: Style.spacing.controlPaddingY
+              onClicked: root.refresh(true)
             }
           }
 
-          // ------------------------------------------------ Footer Notes
           Text {
             width: parent.width
-            topPadding: Style.space(8)
-            text: "Quota is shared within each model group and regenerates on a rolling basis. Press [r] to refresh or [Esc] to close."
+            topPadding: Style.space(4)
+            text: "Press [Esc] or [Backspace] to return to quotas. Press [r] to refresh."
             color: root.alpha(root.foreground, 0.45)
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

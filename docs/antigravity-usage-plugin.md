@@ -41,11 +41,18 @@ The panel uses Omarchy's central theme engine (`qs.Commons.Color` and `qs.Common
 - Color-coded meters: normal fill uses `Color.accent`; falls back to warning tint under 35% and turns `Color.urgent` under 15%.
 - Formatted reset countdowns showing relative duration (e.g. `4h 39m`, `1d 1h`).
 
-### 3. Token Consumption & Daily History Ledger
-- **Live Metrics**: Displays today's burned tokens (e.g. `4.01M burned today`), along with detailed prompt, completion, cache read, and all-time totals.
-- **Model Badges**: Model chips display lifetime tokens consumed (e.g. `Gemini 3.8 Flash (Medium) (15.98M)`).
-- **14-Day Visual Ledger**: Daily bar chart indicating relative consumption across the last 14 active days, including step / turn counts and humanized date labels (`Today`, `Oct 11`, etc.).
-- **Sub-25ms Execution**: Uses file size and mtime indexing in `~/.cache/omarchy/antigravity_token_ledger.json` to avoid rescanning transcripts.
+### 3. Dual-View Sub-Panel Architecture (Codex & Claude Code Inspired)
+- **View 1: Quotas & Limits Overview (Default)**:
+  - Clean, compact non-scrolling layout (~460px height).
+  - Prominent 5-hour session and weekly rate limit meters with reset countdowns and warning states.
+  - Active model indicator and model group pills.
+  - Direct entry point teaser to token analytics: `[ Analytics → ]`.
+- **View 2: Dedicated Token Consumption Sub-Panel**:
+  - Full-screen analytics sub-panel with `← Back to Quotas` navigation.
+  - **Today's Burn Hero KPI Card**: Large bold metric with 3-part matrix for Prompt (Input), Output (Generation), and Cache Read tokens.
+  - **Lifetime Totals**: All-time tokens burned, conversations, and interaction turns.
+  - **Model Attribution**: Live tokens consumed by each specific model.
+  - **14-Day Visual Ledger**: Daily relative consumption bars, turn counts, and detailed prompt/output/cache breakdown.
 
 ### 4. Integrated Tooling & Cross-Plugin State
 - Automatically updates `~/.local/state/omarchy/agents/usage/antigravity.json`, enabling Google Antigravity within the built-in `omarchy.agents` multi-agent panel as well.
@@ -60,7 +67,11 @@ The panel uses Omarchy's central theme engine (`qs.Commons.Color` and `qs.Common
 | **Left Click** | Open / Toggle the Antigravity dashboard |
 | **Right Click** | Launch `agy` terminal CLI |
 | **Middle Click** | Force-refresh live quota summary |
-| `r` / `R` / `Enter` | Refresh live quota while panel is focused |
-| `Esc` | Close panel |
+| `t` / `T` | Toggle between Quotas and Token Consumption views |
+| `q` / `Q` | Switch directly to Quotas view |
+| `Left` / `Right` Arrow | Switch between Quotas and Token Consumption views |
+| `Esc` / `Backspace` | Return from Token view to Quotas view; closes panel if on Quotas view |
+| `r` / `R` / `Enter` | Refresh live quota & ledger while panel is focused |
 | `Tab` | Switch to neighboring bar widget |
 | `omarchy-shell sanjith.antigravity toggle` | Toggle via CLI / script / keybind |
+| `omarchy-shell sanjith.antigravity toggleView` | Toggle views via IPC |

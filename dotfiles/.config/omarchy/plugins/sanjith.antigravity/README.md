@@ -28,16 +28,21 @@ This plugin displays real-time quota usage and limits for Google Antigravity (`a
   - `assets/antigravity.svg`: Pure vector white SVG mark designed for dark bar themes.
   - `assets/antigravity-light.svg`: Pure vector charcoal SVG mark (`#202124`) designed for light bar themes.
   - Supports configurable `barIconStyle` (`"monochrome"` or `"color"`).
-- **Token Dashboard & Ledger**: Real-time summary card showing today's burned tokens vs all-time consumption with detailed breakdown cards.
+- **Dual-View Sub-Panel (Codex & Claude Code Inspired)**:
+  - **Quotas & Limits View (Default)**: Focused, non-scrolling dashboard (~460px) showing 5-hour and weekly limits, active models, and quick launch card.
+  - **Dedicated Token Analytics Sub-Panel**: Full-featured analytics view accessed via `[ Token Consumption ]`, featuring today's burn KPI card, prompt caching metrics, lifetime totals, per-model attribution, and a 14-day activity ledger.
 - **Interactive Panel**:
   - `Left Click`: Toggle usage dashboard panel.
   - `Right Click`: Launch `agy` terminal CLI.
   - `Middle Click`: Force refresh quota and token ledger.
 - **Keyboard Navigation**:
-  - `r` / `R` or `Enter`: Refresh quota.
-  - `Esc`: Close panel.
+  - `t` / `T`: Toggle between Quotas and Token Consumption views.
+  - `q` / `Q`: Switch to Quotas view.
+  - `Left` / `Right` Arrow: Toggle between views.
+  - `Esc` / `Backspace`: Return to Quotas view (or close panel if on Quotas).
+  - `r` / `R` or `Enter`: Force refresh quota and token ledger.
   - `Tab`: Switch to neighboring bar panel.
-- **IPC Support**: `omarchy-shell sanjith.antigravity <open|close|toggle|refresh>`.
+- **IPC Support**: `omarchy-shell sanjith.antigravity <open|close|toggle|refresh|setView|toggleView>`.
 - **Automatic Token Refresh**: Seamlessly refreshes Google OAuth tokens and stays in sync with `secret-tool` / system keyring.
 
 ## Installation & Configuration
