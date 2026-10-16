@@ -112,6 +112,9 @@ Panel {
         text += "\nClaude/GPT: 5h " + usageData.claudeGpt.fiveHour.remainingPercent + "% · Wk " + (usageData.claudeGpt.weekly ? usageData.claudeGpt.weekly.remainingPercent + "%" : "100%")
       }
     }
+    if (usageData.tokenUsage && usageData.tokenUsage.today && usageData.tokenUsage.today.totalFormatted !== "0") {
+      text += "\nTokens today: " + usageData.tokenUsage.today.totalFormatted + " (all-time: " + (usageData.tokenUsage.allTime ? usageData.tokenUsage.allTime.totalFormatted : "0") + ")"
+    }
     return text
   }
 
@@ -253,7 +256,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(430))
-    contentHeight: panel.fittedContentHeight(mainColumn.implicitHeight, Style.space(660))
+    contentHeight: panel.fittedContentHeight(mainColumn.implicitHeight, Style.space(760))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -360,6 +363,120 @@ Panel {
                 font.bold: true
                 elide: Text.ElideRight
                 anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+          }
+
+          // --------------------------------------------- Token Consumption Card
+          BorderSurface {
+            visible: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+            width: parent.width
+            implicitHeight: tokenSummaryCol.implicitHeight + Style.space(16)
+            radius: Style.cornerRadius
+            color: root.alpha(root.foreground, 0.04)
+            borderSpec: Border.controlSpec("normal", root.alpha(root.dim, 0.35), Color.accent)
+
+            Column {
+              id: tokenSummaryCol
+              anchors.fill: parent
+              anchors.margins: Style.space(8)
+              spacing: Style.space(5)
+
+              Item {
+                width: parent.width
+                implicitHeight: Math.max(tknHeaderRow.implicitHeight, tknTodayVal.implicitHeight)
+
+                Row {
+                  id: tknHeaderRow
+                  spacing: Style.space(6)
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+
+                  Text {
+                    text: "󰠮"
+                    color: Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Text {
+                    text: "Token Consumption"
+                    color: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: true
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                Text {
+                  id: tknTodayVal
+                  text: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today
+                    ? (root.usageData.tokenUsage.today.totalFormatted + " burned today")
+                    : ""
+                  color: Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                }
+              }
+
+              Row {
+                width: parent.width
+                spacing: Style.space(8)
+
+                Text {
+                  text: "Prompt: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today ? root.usageData.tokenUsage.today.inputFormatted : "0")
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: "·"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: "Output: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today ? root.usageData.tokenUsage.today.outputFormatted : "0")
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: "·"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: "Cache: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.today ? root.usageData.tokenUsage.today.cacheFormatted : "0")
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: "·"
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
+
+                Text {
+                  text: "All-time: " + (root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.allTime ? root.usageData.tokenUsage.allTime.totalFormatted : "0")
+                  color: root.foreground
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                  font.bold: true
+                }
               }
             }
           }
@@ -525,7 +642,13 @@ Panel {
                       spacing: Style.space(6)
 
                       Text {
-                        text: modelData.displayName || modelData.id
+                        text: {
+                          var t = modelData.displayName || modelData.id
+                          if (modelData.tokens && modelData.tokens.totalTokens > 0) {
+                            t += " (" + modelData.tokens.totalFormatted + ")"
+                          }
+                          return t
+                        }
                         color: modelData.isActive ? Color.accent : root.foreground
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.caption
@@ -549,6 +672,102 @@ Panel {
           }
 
           PanelSeparator {
+            foreground: root.foreground
+          }
+
+          // =============================================================
+          // SECTION 2.5: TOKEN CONSUMPTION HISTORY
+          // =============================================================
+          Column {
+            visible: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.history && root.usageData.tokenUsage.history.length > 0
+            width: parent.width
+            spacing: Style.space(8)
+
+            PanelSectionHeader {
+              width: parent.width
+              text: "TOKEN USAGE HISTORY"
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+            }
+
+            Text {
+              text: "Daily tokens consumed across recent active sessions"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              width: parent.width
+            }
+
+            Repeater {
+              model: root.usageData && root.usageData.tokenUsage ? root.usageData.tokenUsage.history : []
+              delegate: Column {
+                id: histCol
+                required property var modelData
+                required property int index
+                width: parent.width
+                spacing: Style.space(3)
+                topPadding: Style.space(2)
+                bottomPadding: Style.space(2)
+
+                Item {
+                  width: parent.width
+                  implicitHeight: Math.max(lblHistDate.implicitHeight, lblHistTotal.implicitHeight)
+
+                  Text {
+                    id: lblHistDate
+                    text: modelData.label || modelData.date
+                    color: modelData.label === "Today" ? Color.accent : root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: modelData.label === "Today"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+
+                  Text {
+                    id: lblHistTotal
+                    text: modelData.totalFormatted + " tokens (" + modelData.steps + " turns)"
+                    color: modelData.label === "Today" ? Color.accent : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                    font.bold: modelData.label === "Today"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                  }
+                }
+
+                // Daily relative usage meter
+                Item {
+                  width: parent.width
+                  implicitHeight: Style.space(4)
+
+                  Rectangle {
+                    anchors.fill: parent
+                    radius: height / 2
+                    color: root.track
+                  }
+
+                  Rectangle {
+                    anchors.left: parent.left
+                    height: parent.height
+                    radius: height / 2
+                    width: parent.width * Math.max(0.04, Math.min(1.0, Number(modelData.barFraction || 0)))
+                    color: modelData.label === "Today" ? Color.accent : root.dim
+                  }
+                }
+
+                Text {
+                  text: "Prompt: " + modelData.inputFormatted + " · Output: " + modelData.outputFormatted + " · Cache: " + modelData.cacheFormatted
+                  color: root.alpha(root.dim, 0.75)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption - 1
+                }
+              }
+            }
+          }
+
+          PanelSeparator {
+            visible: root.usageData && root.usageData.tokenUsage && root.usageData.tokenUsage.history && root.usageData.tokenUsage.history.length > 0
             foreground: root.foreground
           }
 

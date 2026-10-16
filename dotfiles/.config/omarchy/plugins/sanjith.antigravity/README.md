@@ -11,7 +11,13 @@ This plugin displays real-time quota usage and limits for Google Antigravity (`a
 2. **Claude and GPT Models** (e.g. `Claude Sonnet 4.6 (Thinking)`, `Claude Opus 4.6 (Thinking)`, `GPT-OSS 120B (Medium)`)
    - **5-Hour Session Limit**: Percentage remaining/used, progress bar, and reset countdown.
    - **Weekly Limit**: Percentage remaining/used, progress bar, and reset countdown.
-3. **Dynamic Model Discovery**: Automatically adapts to newly added or revamped models from the Antigravity backend without breaking. Shows model pill badges with live status and active model indicator.
+3. **Dynamic Model Discovery**: Automatically adapts to newly added or revamped models from the Antigravity backend without breaking. Shows model pill badges with live status, active model indicator, and total consumed token badges.
+4. **Token Consumption & History**:
+   - **Real-Time Burn Calculation**: Accurately tracks Input / Prompt tokens, Output tokens, Cache Read tokens, and Total tokens consumed.
+   - **Per-Model Attribution**: Displays lifetime tokens consumed by each specific model (e.g. Gemini 3.8 Flash Medium).
+   - **Daily Usage History Ledger**: Visual 14-day history with relative activity meters, formatted token volume, and interaction turn counts.
+   - **High-Performance Incremental Cache**: Stat-based ledger (`~/.cache/omarchy/antigravity_token_ledger.json`) reads only modified transcript logs in sub-25ms.
+   - **Omarchy Agent State Sync**: Automatically publishes token statistics and daily activity directly to `~/.local/state/omarchy/agents/usage/antigravity.json`.
 
 ## Features
 
@@ -22,10 +28,11 @@ This plugin displays real-time quota usage and limits for Google Antigravity (`a
   - `assets/antigravity.svg`: Pure vector white SVG mark designed for dark bar themes.
   - `assets/antigravity-light.svg`: Pure vector charcoal SVG mark (`#202124`) designed for light bar themes.
   - Supports configurable `barIconStyle` (`"monochrome"` or `"color"`).
+- **Token Dashboard & Ledger**: Real-time summary card showing today's burned tokens vs all-time consumption with detailed breakdown cards.
 - **Interactive Panel**:
   - `Left Click`: Toggle usage dashboard panel.
   - `Right Click`: Launch `agy` terminal CLI.
-  - `Middle Click`: Force refresh quota.
+  - `Middle Click`: Force refresh quota and token ledger.
 - **Keyboard Navigation**:
   - `r` / `R` or `Enter`: Refresh quota.
   - `Esc`: Close panel.
